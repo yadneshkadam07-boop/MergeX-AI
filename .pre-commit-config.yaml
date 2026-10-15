@@ -45,19 +45,22 @@ repos:
         files: ^backend/
         args: [--config, backend/pyproject.toml]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.13.0
-    hooks:
-      - id: mypy
-        files: ^backend/app/
-        args: [--config-file, backend/pyproject.toml]
-        additional_dependencies:
-          - pydantic>=2.9
-          - pydantic-settings>=2.6
-          - types-requests
-
   - repo: local
     hooks:
+      # mypy must see the real dependency set (FastAPI, SQLAlchemy, structlog,
+      # ...), so it runs from the project environment rather than an isolated
+      # hook venv whose `additional_dependencies` list would drift from
+      # pyproject.toml. Requires `dev.ps1 setup` / `make setup` first.
+      # Paths are passed explicitly because pre-commit runs from the repo root
+      # while mypy resolves `files` in pyproject.toml relative to the CWD.
+      - id: mypy
+        name: mypy (backend)
+        entry: python -m mypy --config-file backend/pyproject.toml backend/app backend/tests
+        language: system
+        types: [python]
+        files: ^backend/(app|tests)/
+        pass_filenames: false
+
       - id: frontend-lint
         name: eslint (frontend)
         entry: npm --prefix frontend run lint
