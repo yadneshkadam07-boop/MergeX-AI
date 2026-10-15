@@ -1,0 +1,19 @@
+# Keep build context small and never ship local state into the image.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+.workspace/
+.sandbox/
+.env
+.env.*
+!.env.example
+*.log
+.git/
+.gitignore

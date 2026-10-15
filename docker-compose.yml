@@ -1,0 +1,79 @@
+# MergeX AI - local development stack.
+#   docker compose up --build
+#   frontend http://localhost:5173 | backend http://localhost:8000/docs
+name: mergex-ai
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: mergex-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mergex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mergex}
+      POSTGRES_DB: ${POSTGRES_DB:-mergex}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mergex} -d ${POSTGRES_DB:-mergex}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: mergex-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override the host-oriented values from .env for in-network addressing.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mergex}:${POSTGRES_PASSWORD:-mergex}@db:5432/${POSTGRES_DB:-mergex}
+      WORKSPACE_DIR: /workspace
+    ports:
+      - "8000:8000"
+    volumes:
+      # Source is bind-mounted for hot reload; the sandbox is a container-only
+      # volume so cloned user repositories never touch the host filesystem.
+      - ./backend:/app
+      - workspace:/workspace
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).status == 200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    container_name: mergex-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      # Keep the image's node_modules; do not let the host directory shadow it.
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  pgdata:
+  workspace:
