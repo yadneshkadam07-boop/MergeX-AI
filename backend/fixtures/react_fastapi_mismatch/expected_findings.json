@@ -1,0 +1,90 @@
+{
+  "$comment": [
+    "Contract between this fixture and the analysis engine.",
+    "Phase 1 asserts `stack` only. Phases 2-3 assert `findings` as each rule",
+    "lands; the rule IDs below are the intended identifiers, defined by the",
+    "issue taxonomy in app/analysis.",
+    "A fixture finding with `implemented: false` is a to-do, not a failure."
+  ],
+  "fixture": "react_fastapi_mismatch",
+  "description": "React + axios frontend against a FastAPI backend, with five cross-layer API contract defects. Every layer parses and type-checks on its own; only the seams are wrong.",
+  "stack": {
+    "frontend": ["React"],
+    "backend": ["FastAPI"],
+    "database": ["SQLAlchemy"],
+    "languages_include": ["TypeScript", "Python"],
+    "package_managers": ["npm", "pip"],
+    "frontend_roots": ["frontend"],
+    "backend_roots": ["backend"],
+    "is_monorepo": false
+  },
+  "findings": [
+    {
+      "rule_id": "MX-API-001",
+      "title": "Frontend calls an endpoint the backend does not define",
+      "category": "api_contract",
+      "severity": "critical",
+      "file_path": "frontend/src/api/users.ts",
+      "symbol": "exportUsers",
+      "expected": "A backend route matching GET /api/users/export",
+      "actual": "No route is declared for /api/users/export",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-API-002",
+      "title": "Frontend request path does not match any backend route (likely typo)",
+      "category": "api_contract",
+      "severity": "critical",
+      "file_path": "frontend/src/api/users.ts",
+      "symbol": "getUser",
+      "expected": "GET /api/users/{user_id}",
+      "actual": "GET /api/user/${id}",
+      "note": "Differs from a real route by one character; the engine should suggest the near match rather than only reporting it missing.",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-API-003",
+      "title": "HTTP method mismatch between frontend call and backend route",
+      "category": "api_contract",
+      "severity": "high",
+      "file_path": "frontend/src/api/users.ts",
+      "symbol": "deactivateUser",
+      "expected": "DELETE /api/users/{user_id}/deactivate",
+      "actual": "POST /api/users/${id}/deactivate",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-API-004",
+      "title": "Request body field names do not match the backend schema",
+      "category": "api_contract",
+      "severity": "high",
+      "file_path": "frontend/src/api/users.ts",
+      "symbol": "createUser",
+      "expected": "{ email, full_name } per UserCreate",
+      "actual": "{ email, fullName }",
+      "note": "camelCase/snake_case drift. The engine must not flag this where an alias or a serialiser config reconciles the two.",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-API-005",
+      "title": "Call to an authenticated route sends no credentials",
+      "category": "api_contract",
+      "severity": "high",
+      "file_path": "frontend/src/api/tasks.ts",
+      "symbol": "deleteAllTasks",
+      "expected": "An Authorization header, since the route depends on require_admin",
+      "actual": "No Authorization header is set on the request or the axios client",
+      "implemented": false
+    }
+  ],
+  "must_not_report": [
+    {
+      "reason": "listUsers, listTasks and createTask are correct on both sides and must not produce findings.",
+      "symbols": ["listUsers", "listTasks", "createTask"]
+    },
+    {
+      "reason": "CORS is restricted to the dev origin, not a wildcard.",
+      "file_path": "backend/app/main.py"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+# SEEDED BUG (MX-DEP-001, vulnerable dependencies): every pin below has a
+# known advisory in the OSV database.
+fastapi==0.65.1
+uvicorn==0.13.4
+# CVE-2020-14343: arbitrary code execution via yaml.full_load
+PyYAML==5.3.1
+# CVE-2023-32681: proxy Authorization header leak on redirect
+requests==2.19.1
+# CVE-2024-22190 / GHSA: untrusted search path on Windows
+GitPython==3.1.29
+# CVE-2024-35195: session verify=False persists across requests
+jinja2==2.11.2
+sqlalchemy==2.0.31
+python-jose==3.3.0

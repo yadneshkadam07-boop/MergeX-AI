@@ -7,19 +7,22 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 
 import structlog
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
 from app.api.router import api_router
 from app.api.routes.health import router as health_router
 from app.core.config import Settings, get_settings
+from app.core.database import build_session_factory, create_engine
 from app.core.logging import configure_logging, get_logger
 from app.core.rate_limit import RateLimitMiddleware
 
@@ -37,7 +40,7 @@ it is never the sole source of a finding.
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Start-up and shut-down hooks."""
     settings: Settings = app.state.settings
     log = get_logger("app.lifespan")
@@ -49,6 +52,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # unavailable, which is more useful than a crash loop.
         log.error("workspace_unavailable", path=str(settings.workspace_path), error=str(exc))
 
+    # The engine is created here, not at import time, so that building an app
+    # never opens a connection as a side effect and tests can point a second
+    # app at a different database.
+    engine = create_engine(settings)
+    app.state.db_engine = engine
+    app.state.session_factory = build_session_factory(engine)
+
     log.info(
         "startup",
         app=settings.app_name,
@@ -58,9 +68,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ai_explanations=settings.ai_explanations_enabled,
     )
 
-    yield
-
-    log.info("shutdown")
+    try:
+        yield
+    finally:
+        # Return pooled connections before the process exits; without this,
+        # Postgres is left holding them until its own timeout.
+        await engine.dispose()
+        log.info("shutdown")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -147,11 +161,43 @@ def _register_exception_handlers(app: FastAPI) -> None:
     # 429 responses are produced directly by RateLimitMiddleware, which never
     # raises, so no handler is registered for them.
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        """Give every error the same envelope.
+
+        FastAPI's default emits a bare ``{"detail": ...}``, which would mean
+        clients had to handle two different error shapes.
+        """
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": _error_code(exc.status_code), "detail": str(exc.detail)},
+            headers=getattr(exc, "headers", None),
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        """Report field errors in a JSON-safe, stable shape.
+
+        ``exc.errors()`` is not serialisable: when a field validator raises,
+        Pydantic puts the original exception object in the entry's ``ctx``.
+        Passing it straight through turned every such 422 into a 500. Only the
+        three fields a client can act on are projected out.
+        """
+        field_errors = [
+            {
+                "field": ".".join(str(part) for part in error.get("loc", ())) or "body",
+                "message": str(error.get("msg", "Invalid value")),
+                "type": str(error.get("type", "value_error")),
+            }
+            for error in exc.errors()
+        ]
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"error": "validation_error", "detail": exc.errors()},
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={
+                "error": "validation_error",
+                "detail": _validation_summary(field_errors),
+                "errors": field_errors,
+            },
         )
 
     @app.exception_handler(Exception)
@@ -167,6 +213,28 @@ def _register_exception_handlers(app: FastAPI) -> None:
                 "request_id": request_id,
             },
         )
+
+
+def _error_code(status_code: int) -> str:
+    """Map a status code to a stable machine-readable code.
+
+    ``404`` becomes ``not_found``, ``409`` becomes ``conflict``. Derived from
+    the HTTP reason phrase so a new status needs no table entry.
+    """
+    try:
+        phrase = HTTPStatus(status_code).phrase
+    except ValueError:
+        return "error"
+    return phrase.lower().replace(" ", "_").replace("-", "_")
+
+
+def _validation_summary(field_errors: list[dict[str, str]]) -> str:
+    """One readable sentence describing what failed validation."""
+    if not field_errors:
+        return "Request failed validation."
+    first = field_errors[0]
+    suffix = f" (and {len(field_errors) - 1} more)" if len(field_errors) > 1 else ""
+    return f"{first['field']}: {first['message']}{suffix}"
 
 
 def _elapsed_ms(started: float) -> float:

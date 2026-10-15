@@ -1,0 +1,92 @@
+{
+  "$comment": [
+    "Contract between this fixture and the analysis engine.",
+    "Phase 1 asserts `stack` only. Phases 2-3 assert `findings` as each rule",
+    "lands; `implemented: false` marks a rule that does not exist yet."
+  ],
+  "fixture": "react_fastapi_schema_drift",
+  "description": "SQLAlchemy models drifted from the SQL migrations that actually built the database. The ORM layer is internally consistent and the migrations are valid SQL; they simply disagree with each other.",
+  "stack": {
+    "frontend": ["React"],
+    "backend": ["FastAPI"],
+    "database": ["Alembic", "PostgreSQL", "SQLAlchemy"],
+    "languages_include": ["TypeScript", "Python", "SQL"],
+    "package_managers": ["npm", "pip"],
+    "frontend_roots": ["frontend"],
+    "backend_roots": ["backend"],
+    "is_monorepo": false
+  },
+  "findings": [
+    {
+      "rule_id": "MX-DB-001",
+      "title": "ORM model field has no corresponding database column",
+      "category": "schema",
+      "severity": "critical",
+      "file_path": "backend/app/models.py",
+      "symbol": "Product.warehouse_code",
+      "expected": "products.warehouse_code VARCHAR(16) in the migrations",
+      "actual": "0002_create_products.sql never creates the column",
+      "note": "Breaks every SELECT against products, not just writes.",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-DB-002",
+      "title": "Column type differs between model and database schema",
+      "category": "schema",
+      "severity": "high",
+      "file_path": "backend/app/models.py",
+      "symbol": "Product.unit_price",
+      "expected": "NUMERIC(10, 2) per the model",
+      "actual": "INTEGER per 0002_create_products.sql",
+      "note": "Silent precision loss on money, which is worse than a crash.",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-DB-003",
+      "title": "Query references a column that exists in neither model nor schema",
+      "category": "schema",
+      "severity": "critical",
+      "file_path": "backend/app/queries.py",
+      "symbol": "recently_counted",
+      "expected": "products.last_counted_at to exist",
+      "actual": "Raw SQL selects and orders by last_counted_at, which is undefined",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-DB-004",
+      "title": "Model declares a relationship with no foreign key in the database",
+      "category": "schema",
+      "severity": "medium",
+      "file_path": "backend/migrations/0002_create_products.sql",
+      "symbol": "products.supplier_id",
+      "expected": "supplier_id INTEGER REFERENCES suppliers(id)",
+      "actual": "supplier_id INTEGER with no REFERENCES clause",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-DB-005",
+      "title": "Foreign key column is not indexed",
+      "category": "schema",
+      "severity": "low",
+      "file_path": "backend/migrations/0002_create_products.sql",
+      "symbol": "products.supplier_id",
+      "expected": "An index on the join column",
+      "actual": "No index; the supplier join is a sequential scan",
+      "implemented": false
+    }
+  ],
+  "must_not_report": [
+    {
+      "reason": "suppliers matches its migration exactly and must produce no schema findings.",
+      "symbols": ["Supplier.name", "Supplier.contact_email"]
+    },
+    {
+      "reason": "These columns agree across model and migration.",
+      "symbols": ["Product.sku", "Product.name", "Product.reorder_level", "Product.description"]
+    },
+    {
+      "reason": "low_stock and list_products only touch columns that exist.",
+      "symbols": ["low_stock", "list_products"]
+    }
+  ]
+}

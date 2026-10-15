@@ -47,6 +47,8 @@ FROM base AS prod
 ENV APP_ENV=production \
     WORKSPACE_DIR=/workspace
 COPY --from=builder /opt/venv /opt/venv
+COPY alembic.ini ./
+COPY alembic ./alembic
 COPY app ./app
 
 # Never run the API as root: it handles untrusted repository content.

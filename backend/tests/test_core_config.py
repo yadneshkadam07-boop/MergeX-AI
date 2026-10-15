@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from app.core.config import REPO_ROOT, Settings
 
 
 def _settings(**overrides: object) -> Settings:
@@ -78,3 +79,50 @@ class TestSandboxLimits:
 def test_production_flag() -> None:
     assert _settings(app_env="production").is_production is True
     assert _settings(app_env="local").is_production is False
+
+
+class TestEnvExampleStaysInSync:
+    """`.env.example` is the only documentation of configuration.
+
+    A setting that exists in code but not in the template is undiscoverable;
+    a variable in the template that no longer exists is a lie. Both drift
+    silently, so they are asserted here.
+    """
+
+    # Internal defaults deliberately not exposed as environment variables.
+    INTERNAL_FIELDS = frozenset({"app_name", "github_api_url"})
+    # Documented in the template but consumed by docker-compose or Vite, not
+    # by Settings.
+    NON_SETTINGS_VARS = frozenset(
+        {
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "POSTGRES_DB",
+            "POSTGRES_PORT",
+            "VITE_API_BASE_URL",
+        }
+    )
+
+    @staticmethod
+    def _documented() -> set[str]:
+        template = REPO_ROOT / ".env.example"
+        assert template.is_file(), f"{template} is missing"
+        return set(
+            re.findall(r"^([A-Z][A-Z0-9_]*)=", template.read_text(encoding="utf-8"), re.MULTILINE)
+        )
+
+    def test_every_setting_is_documented(self) -> None:
+        expected = {
+            name.upper() for name in Settings.model_fields if name not in self.INTERNAL_FIELDS
+        }
+
+        undocumented = expected - self._documented()
+
+        assert undocumented == set(), f"Add these to .env.example: {sorted(undocumented)}"
+
+    def test_the_template_has_no_dead_variables(self) -> None:
+        known = {name.upper() for name in Settings.model_fields} | self.NON_SETTINGS_VARS
+
+        unknown = self._documented() - known
+
+        assert unknown == set(), f"These are in .env.example but unused: {sorted(unknown)}"

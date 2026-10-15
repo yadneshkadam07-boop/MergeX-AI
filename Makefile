@@ -49,6 +49,23 @@ api: ## Run the backend locally with reload
 web: ## Run the frontend dev server
 	npm --prefix frontend run dev
 
+# ---- Database ---------------------------------------------------------------
+.PHONY: migrate
+migrate: ## Apply all migrations
+	cd backend && ../$(PY) -m alembic upgrade head
+
+.PHONY: migrate-down
+migrate-down: ## Roll back the most recent migration
+	cd backend && ../$(PY) -m alembic downgrade -1
+
+.PHONY: migration
+migration: ## Autogenerate a migration: make migration m="add x"
+	cd backend && ../$(PY) -m alembic revision --autogenerate -m "$(m)"
+
+.PHONY: db-current
+db-current: ## Show the applied revision
+	cd backend && ../$(PY) -m alembic current
+
 # ---- Quality ---------------------------------------------------------------
 .PHONY: check
 check: lint typecheck test ## Everything CI runs

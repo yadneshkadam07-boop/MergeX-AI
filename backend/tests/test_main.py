@@ -137,4 +137,16 @@ class TestApiMounting:
     def test_openapi_documents_the_health_endpoints(self, client: TestClient) -> None:
         paths = client.get("/openapi.json").json()["paths"]
 
-        assert set(paths) == {"/health", "/health/ready"}
+        assert {"/health", "/health/ready"} <= set(paths)
+
+    def test_openapi_documents_the_resource_endpoints(self, client: TestClient) -> None:
+        paths = client.get("/openapi.json").json()["paths"]
+
+        assert {
+            "/api/v1/projects",
+            "/api/v1/projects/upload",
+            "/api/v1/projects/{project_id}",
+            "/api/v1/projects/{project_id}/analyses",
+            "/api/v1/analyses/{analysis_id}",
+            "/api/v1/analyses/{analysis_id}/issues",
+        } <= set(paths)

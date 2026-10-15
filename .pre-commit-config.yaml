@@ -21,6 +21,9 @@ repos:
       - id: check-case-conflict
       - id: mixed-line-ending
         args: [--fix=lf]
+        # .gitattributes mandates CRLF for PowerShell scripts; this hook
+        # would rewrite them to LF on every commit.
+        exclude: \.ps1$
       - id: check-added-large-files
         args: [--maxkb=512]
       # Hard stop: platform credentials must never enter history.
@@ -49,19 +52,21 @@ repos:
 
   - repo: local
     hooks:
-      # mypy must see the real dependency set (FastAPI, SQLAlchemy, structlog,
-      # ...), so it runs from the project environment rather than an isolated
-      # hook venv whose `additional_dependencies` list would drift from
-      # pyproject.toml. Requires `dev.ps1 setup` / `make setup` first.
-      # Paths are passed explicitly because pre-commit runs from the repo root
-      # while mypy resolves `files` in pyproject.toml relative to the CWD.
-      - id: mypy
-        name: mypy (backend)
-        entry: python -m mypy --config-file backend/pyproject.toml backend/app backend/tests
-        language: system
-        types: [python]
-        files: ^backend/(app|tests)/
-        pass_filenames: false
+      # NOTE: there is deliberately no mypy hook here.
+      #
+      # mypy needs the project's real dependency set (FastAPI, SQLAlchemy,
+      # structlog) to resolve imports, and pre-commit cannot reliably supply
+      # it: `language: system` fails because the git hook does not put the
+      # project venv on PATH (on Windows `python` then resolves to the
+      # Microsoft Store stub and reports "Python was not found"), while
+      # `language: python` with `additional_dependencies: ["./backend[dev]"]`
+      # depends on how a given pip version parses path-plus-extras.
+      #
+      # mypy --strict is enforced where it works, against the project venv:
+      #     make check          /  .\scripts\dev.ps1 check
+      #     make typecheck      /  .\scripts\dev.ps1 typecheck
+      # and in the `backend` job of .github/workflows/ci.yml, which gates
+      # every pull request.
 
       - id: frontend-lint
         name: eslint (frontend)

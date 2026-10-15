@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_pool_size: int = Field(default=5, ge=1, le=50)
     db_max_overflow: int = Field(default=10, ge=0, le=50)
+    # Required for Supabase's connection pooler (port 6543) and any pgbouncer
+    # in transaction mode, where a prepared statement cannot outlive its
+    # transaction. Leave false for a direct connection (port 5432).
+    db_disable_prepared_statements: bool = False
 
     # ---- Gemini (explanation layer only) -----------------------------------
     gemini_api_key: SecretStr | None = None

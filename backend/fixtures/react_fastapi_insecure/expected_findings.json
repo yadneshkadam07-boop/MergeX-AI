@@ -1,0 +1,130 @@
+{
+  "$comment": [
+    "Contract between this fixture and the analysis engine.",
+    "Phase 1 asserts `stack` only. Phases 2-3 assert `findings` as each rule",
+    "lands; `implemented: false` marks a rule that does not exist yet.",
+    "Every credential in this fixture is fabricated. AKIAIOSFODNN7EXAMPLE and",
+    "its secret are AWS's own published documentation examples."
+  ],
+  "fixture": "react_fastapi_insecure",
+  "description": "A React + FastAPI payments app with committed secrets, a wildcard CORS policy, unauthenticated money-moving routes, and dependencies pinned to versions with published advisories.",
+  "stack": {
+    "frontend": ["React"],
+    "backend": ["FastAPI"],
+    "database": ["SQLAlchemy"],
+    "languages_include": ["TypeScript", "Python"],
+    "package_managers": ["npm", "pip"],
+    "frontend_roots": ["frontend"],
+    "backend_roots": ["backend"],
+    "is_monorepo": false
+  },
+  "findings": [
+    {
+      "rule_id": "MX-SEC-001",
+      "title": "Hardcoded secret in source",
+      "category": "security",
+      "severity": "critical",
+      "occurrences": [
+        {
+          "file_path": "frontend/src/api/config.ts",
+          "symbol": "STRIPE_SECRET_KEY",
+          "note": "Live-prefixed Stripe key, and it ships to the browser."
+        },
+        {
+          "file_path": "frontend/src/api/config.ts",
+          "symbol": "SUPABASE_SERVICE_ROLE_KEY",
+          "note": "Service-role JWT: bypasses row-level security."
+        },
+        {
+          "file_path": "backend/app/main.py",
+          "symbol": "JWT_SIGNING_KEY",
+          "note": "Committed fallback default for a signing key."
+        },
+        { "file_path": "backend/app/auth.py", "symbol": "ADMIN_PASSWORD" },
+        { "file_path": "backend/app/auth.py", "symbol": "DATABASE_PASSWORD" }
+      ],
+      "note": "High-entropy strings alone are not enough; the rule should combine a provider prefix (sk_live_, AKIA, SG., eyJ) with an entropy check to keep false positives down.",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-SEC-002",
+      "title": "Sensitive route has no authentication dependency",
+      "category": "security",
+      "severity": "critical",
+      "occurrences": [
+        {
+          "file_path": "backend/app/routes.py",
+          "symbol": "refund_payment",
+          "note": "Moves money. Sibling routes all depend on require_user."
+        },
+        {
+          "file_path": "backend/app/routes.py",
+          "symbol": "export_customers",
+          "note": "Bulk personal-data export, unauthenticated."
+        }
+      ],
+      "expected": "Depends(require_user), consistent with the other routes on this router",
+      "actual": "No dependency declared",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-SEC-003",
+      "title": "CORS allows any origin while also allowing credentials",
+      "category": "security",
+      "severity": "high",
+      "file_path": "backend/app/main.py",
+      "expected": "An explicit origin allowlist",
+      "actual": "allow_origins=[\"*\"] together with allow_credentials=True",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-SEC-004",
+      "title": ".env file committed to version control",
+      "category": "security",
+      "severity": "critical",
+      "file_path": "backend/.env",
+      "note": "The file's presence is the finding; the engine should also report the credentials inside it without echoing their values into the report.",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-SEC-005",
+      "title": "Debug mode enabled on the application instance",
+      "category": "security",
+      "severity": "medium",
+      "file_path": "backend/app/main.py",
+      "actual": "FastAPI(debug=True)",
+      "implemented": false
+    },
+    {
+      "rule_id": "MX-DEP-001",
+      "title": "Dependency pinned to a version with a known advisory",
+      "category": "dependency",
+      "severity": "high",
+      "file_path": "backend/requirements.txt",
+      "occurrences": [
+        { "package": "PyYAML", "version": "5.3.1", "advisory": "CVE-2020-14343" },
+        { "package": "requests", "version": "2.19.1", "advisory": "CVE-2023-32681" },
+        { "package": "GitPython", "version": "3.1.29", "advisory": "CVE-2024-22190" },
+        { "package": "jinja2", "version": "2.11.2", "advisory": "GHSA-h5c8-rqwp-cp95" },
+        { "package": "fastapi", "version": "0.65.1", "advisory": "CVE-2021-32677" }
+      ],
+      "note": "Resolved against OSV.dev. Advisory IDs are indicative; the assertion should be that the package/version pair returns at least one vulnerability, not that a specific CVE id is returned, since the database is updated continuously.",
+      "implemented": false
+    }
+  ],
+  "must_not_report": [
+    {
+      "reason": "API_BASE_URL is a public hostname, not a credential. Flagging it would be a false positive.",
+      "file_path": "frontend/src/api/config.ts",
+      "symbol": "API_BASE_URL"
+    },
+    {
+      "reason": "These routes correctly declare an authentication dependency.",
+      "symbols": ["list_payments", "delete_payment"]
+    },
+    {
+      "reason": "sqlalchemy 2.0.31 has no advisory and must not appear in dependency findings.",
+      "package": "sqlalchemy"
+    }
+  ]
+}

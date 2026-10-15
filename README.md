@@ -25,9 +25,50 @@ the seams do not line up.
 
 ## Status
 
-Phase 0 of 6 — **scaffold complete**. The monorepo, tooling, container stack and health
-endpoints are in place. The analysis engine lands in Phases 1–4 and the dashboard in Phase 5.
-See [CLAUDE.md](CLAUDE.md) for the phase plan and engineering conventions.
+Phase 1 of 6 complete. You can import a repository today and get its detected stack back;
+the cross-layer checks land in Phases 2–4 and the dashboard in Phase 5.
+
+| Phase | Scope | State |
+| --- | --- | --- |
+| 0 | Monorepo, container stack, tooling, CI, health endpoints | ✅ |
+| 1 | Schema + migrations, project/analysis API, repo importer, stack detector, seeded fixtures | ✅ |
+| 2 | Tree-sitter parsers and extractors | — |
+| 3 | Contract diff, schema validation, security scanner | — |
+| 4 | LangGraph pipeline, Gemini, scoring, SSE | — |
+| 5 | Dashboard UI | — |
+| 6 | Architecture graph, deploy configs | — |
+
+See [CLAUDE.md](CLAUDE.md) for the engineering conventions and the decision log.
+
+### Working today
+
+```bash
+# Import a public repo and see what it is built from
+curl -X POST http://localhost:8000/api/v1/projects \
+  -H 'Content-Type: application/json' \
+  -d '{"source_url": "https://github.com/owner/repo"}'
+```
+
+```jsonc
+{
+  "project": {
+    "name": "repo",
+    "detected_stack": {
+      "frontend": ["React"],       "frontend_roots": ["frontend"],
+      "backend":  ["FastAPI"],     "backend_roots":  ["backend"],
+      "database": ["SQLAlchemy"],
+      "languages": { "Python": 6, "TypeScript": 4 },
+      "signals": [ /* every conclusion, with the file that proved it */ ]
+    }
+  },
+  "import_summary": { "file_count": 13, "size_bytes": 10399, "duration_ms": 84 }
+}
+```
+
+Three sample projects with **deliberately seeded cross-layer bugs** live in
+[`backend/fixtures/`](backend/fixtures) — a mismatched API path, a missing database column,
+and a hardcoded secret. Each has a manifest of the findings the engine must produce, so
+Phases 2–3 are built against a fixed target. They double as the demo.
 
 ---
 
@@ -104,12 +145,43 @@ The ones that matter most:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | `postgresql+asyncpg://mergex:mergex@localhost:5432/mergex` | Async SQLAlchemy URL |
+| `DATABASE_URL` | `postgresql+asyncpg://mergex:mergex@localhost:5432/mergex` | Connection string |
+| `DB_DISABLE_PREPARED_STATEMENTS` | `false` | Set `true` for a pooled Supabase URL (see below) |
 | `GEMINI_API_KEY` | *(empty)* | Enables AI explanations. **Analysis works without it** |
 | `GITHUB_TOKEN` | *(empty)* | Raises the GitHub rate limit; required for private repos |
 | `MAX_REPO_SIZE_MB` | `100` | Imports above this are rejected |
 | `ANALYSIS_TIMEOUT_SECONDS` | `600` | Wall-clock budget per analysis |
 | `CORS_ORIGINS` | `http://localhost:5173,…` | Comma-separated allowed origins |
+
+### Using Supabase
+
+Paste the connection string exactly as the dashboard gives it to you. `postgres://` and
+`postgresql://` are rewritten to `postgresql+asyncpg://`, and a trailing `?sslmode=require`
+is translated into asyncpg's own SSL option — asyncpg has no `sslmode` argument and fails
+outright if it is passed through.
+
+One flag matters. The **transaction pooler** (port 6543) is pgbouncer, where a prepared
+statement cannot outlive its transaction:
+
+```bash
+DATABASE_URL=postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:6543/postgres
+DB_DISABLE_PREPARED_STATEMENTS=true
+```
+
+With the **direct connection** (port 5432) leave it `false`. Always run migrations against
+the direct connection.
+
+### Migrations
+
+```bash
+make migrate                      # .\scripts\dev.ps1 migrate
+make migration m="add issues"     # .\scripts\dev.ps1 migration "add issues"
+make db-current                   # .\scripts\dev.ps1 db-current
+```
+
+`docker compose up` applies migrations before starting the API, so a fresh volume works
+immediately. The Alembic URL comes from `app.core.config`, never from `alembic.ini`, so
+migrations and the service can never disagree about which database they mean.
 
 ---
 

@@ -35,6 +35,11 @@ pnpm-debug.log*
 *.pem
 *.key
 
+# Analysis fixtures deliberately commit a .env file: "secrets committed to
+# version control" is one of the defects MergeX detects, so the fixture has to
+# contain one. Every credential in there is fabricated.
+!backend/fixtures/**/.env
+
 # ---- MergeX runtime artifacts ----
 # Cloned/extracted user repositories live here and must never be committed.
 /backend/.sandbox/

@@ -28,6 +28,7 @@ dependencies = [
   "structlog>=24.4,<26.0",
 
   # --- HTTP clients (GitHub REST, OSV.dev) ---
+  "anyio>=4.6,<5.0",            # to_thread.run_sync for blocking file work
   "httpx>=0.27,<0.29",
   "tenacity>=9.0,<10.0",           # retry/backoff for external calls
 
@@ -67,7 +68,7 @@ include = ["app*"]
 line-length = 100
 target-version = "py311"
 src = ["app", "tests"]
-extend-exclude = ["fixtures", ".workspace", "alembic/versions"]
+extend-exclude = ["fixtures", ".workspace"]
 
 [tool.ruff.lint]
 select = [
@@ -91,6 +92,13 @@ ignore = [
   "ANN401",    # allow typing.Any where genuinely dynamic
   "B008",      # FastAPI Depends()/File() in defaults is the documented idiom
   "S101",      # assert is fine (tests, internal invariants)
+  # ASYNC109 wants callers to wrap with `asyncio.timeout` instead of taking a
+  # `timeout` argument. That is wrong for the git runner: the timeout has to
+  # be *inside* the function that owns the subprocess, because on expiry it
+  # must kill that process. An external cancellation would orphan it. The
+  # deadline is still enforced with `asyncio.wait_for`, and `timeout` is part
+  # of the GitRunner protocol that makes the clone path testable.
+  "ASYNC109",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -116,11 +124,15 @@ ban-relative-imports = "all"
 [tool.black]
 line-length = 100
 target-version = ["py311"]
-extend-exclude = '''
+# force-exclude, not extend-exclude: the latter is ignored for files passed
+# explicitly on the command line, which is how pre-commit invokes black, so a
+# fixture would be reformatted by the hook but not by `black .`.
+# Migrations are deliberately NOT excluded: alembic's post-write hooks format
+# them, so they should match the rest of the codebase.
+force-exclude = '''
 /(
-  | fixtures
+  fixtures
   | \.workspace
-  | alembic/versions
 )/
 '''
 
@@ -194,6 +206,12 @@ filterwarnings = ["error::DeprecationWarning:app.*"]
 source = ["app"]
 branch = true
 omit = ["app/main.py", "*/__init__.py"]
+# SQLAlchemy's asyncio support drives coroutines through greenlets
+# (`greenlet_spawn`), and Starlette's TestClient runs the app in a portal
+# thread. Without both of these, coverage silently misses the lines of every
+# async endpoint that touches the database -- it reported 54% for a router
+# whose handlers were in fact fully exercised.
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
 # Quality bar: the analysis engine must stay at or above 70% coverage.

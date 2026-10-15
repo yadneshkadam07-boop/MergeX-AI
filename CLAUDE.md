@@ -79,6 +79,9 @@ Windows uses `scripts/dev.ps1`; Linux/macOS/CI use the identical `make` targets.
 | Lint + types + tests | `.\scripts\dev.ps1 check` | `make check` |
 | Auto-format | `.\scripts\dev.ps1 format` | `make format` |
 | Tests + coverage | `.\scripts\dev.ps1 test` | `make test` |
+| Apply migrations | `.\scripts\dev.ps1 migrate` | `make migrate` |
+| New migration | `.\scripts\dev.ps1 migration "add x"` | `make migration m="add x"` |
+| Show DB revision | `.\scripts\dev.ps1 db-current` | `make db-current` |
 
 Raw equivalents, if you prefer them:
 
@@ -178,8 +181,8 @@ floor at 0. Per-category sub-scores are computed the same way over that category
 | Phase | Scope | State |
 | --- | --- | --- |
 | 0 | Monorepo scaffold, docker-compose, lint/format/CI, health endpoint | **done** |
-| 1 | DB models, Alembic, project/analysis CRUD, repo importer, stack detector | next |
-| 2 | Tree-sitter parsers + extractors, unit tests against fixtures | |
+| 1 | DB models, Alembic, project/analysis CRUD, repo importer, stack detector, seeded fixtures | **done** |
+| 2 | Tree-sitter parsers + extractors, unit tests against fixtures | next |
 | 3 | API-contract diff, schema validation, security scanner, seeded-bug fixtures | |
 | 4 | LangGraph workflow, Gemini integration, synthesizer, scoring, SSE | |
 | 5 | Frontend pages wired to the API | |
@@ -237,6 +240,78 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
 - **Frontend has no test runner yet.** Vitest + Testing Library arrive with Phase 5, when
   there are components whose behaviour is worth asserting.
 
+### Phase 1
+
+- **Enums are `VARCHAR` + `CHECK`, not native PG enums** (`native_enum=False`). Adding a
+  value to a native enum needs `ALTER TYPE`, which is awkward in a migration, and the issue
+  taxonomy will keep growing. It also means the same DDL applies on SQLite, so tests need no
+  database service. `values_callable` is mandatory — without it SQLAlchemy persists the
+  member *name* (`CRITICAL`) instead of the value (`critical`).
+- **UUID primary keys.** An analysis id can then be minted before the row exists (useful for
+  the SSE stream URL), and ids are not enumerable.
+- **The initial migration is hand-written.** Autogenerating it against SQLite would flatten
+  `JSONB` to `JSON` and bake the wrong type into the PostgreSQL migration.
+  `tests/test_migrations.py` asserts the migration and the models agree, which is what lets
+  the rest of the suite use `create_all` instead of running Alembic per test.
+- **Alembic takes its URL from `app.core.config`,** not `alembic.ini`, so migrations and the
+  running service can never disagree. A URL already set in the Alembic config wins, which is
+  how tests target a throwaway database. `env.py` supports sync *and* async drivers.
+- **`DATABASE_URL` is normalised, not validated.** A pasted Supabase string works as-is:
+  `postgres://`/`postgresql://` is rewritten to `postgresql+asyncpg://`, and `?sslmode=...`
+  becomes asyncpg's `ssl` connect-arg (asyncpg has no `sslmode` kwarg and raises on it).
+  `DB_DISABLE_PREPARED_STATEMENTS=true` is required for the pooled Supabase endpoint
+  (port 6543, pgbouncer in transaction mode); run migrations against the direct connection.
+- **SQLite foreign keys are enabled per connection** via a `PRAGMA foreign_keys=ON` listener.
+  SQLite ignores `REFERENCES` by default, so `ON DELETE CASCADE` was silently a no-op and
+  the cascade tests were passing without testing anything.
+- **Coverage must declare `concurrency = ["thread", "greenlet"]`.** SQLAlchemy's asyncio
+  support drives coroutines through greenlets and TestClient runs the app in a portal
+  thread; without both, coverage silently misses the body of every async endpoint that
+  touches the database. It reported 54% for a router that was in fact 98% covered.
+- **Import happens synchronously at project creation.** The size and timeout caps bound it,
+  and it makes Phase 1 demonstrable end to end. Phase 4 moves the whole pipeline into a
+  background job with SSE progress; the service functions were written to be reusable there.
+- **Blocking work is pushed to threads** with `anyio.to_thread.run_sync`: archive
+  extraction, tree walking, stack detection and upload writes. At the 100 MB limit these
+  would otherwise stall the event loop for seconds, including health probes.
+- **ZIP uploads are retained; clones are not.** A ZIP has no origin to re-fetch from, so the
+  archive is kept at `WORKSPACE_DIR/uploads/<project_id>.zip` and re-extracted per analysis.
+  The filename comes from the project id, never from the user-supplied name.
+- **`repo_importer` was split** into `git_client` (hardened subprocess), `archive` (ZIP
+  safety) and `repo_importer` (orchestration). The brief listed one module; three are
+  independently testable, and the ZIP safety rules deserve their own test file.
+- **Only `github.com` is accepted** for imports. That is a security boundary: the URL is
+  handed to `git clone`, so an arbitrary host would make the endpoint an SSRF primitive
+  against anything the backend can reach.
+- **`is_monorepo` requires an explicit workspace declaration.** A `frontend/` + `backend/`
+  split is the most common shape MergeX sees and is *not* a monorepo; inferring one from
+  "two manifests exist" would mislead the agents about how to pair layers. Layer locations
+  are reported separately as `frontend_roots` / `backend_roots`, which Phase 2 uses to
+  decide where to look for API calls versus route definitions.
+- **One error envelope for every failure:** `{"error": "<code>", "detail": "<text>"}`, with
+  `errors[]` added for validation. FastAPI's default bare `{"detail": ...}` would have meant
+  two shapes for clients. Note `RequestValidationError.errors()` is *not* JSON-serialisable
+  when a field validator raises — Pydantic puts the exception object in `ctx` — which turned
+  every such 422 into a 500 until the handler began projecting out only the safe fields.
+- **Issues have a DB-level `UNIQUE (analysis_id, fingerprint)`.** Deduplication is an
+  invariant, not just something the synthesizer is trusted to do.
+- **The three fixtures are all React + FastAPI**, per the brief. That leaves generality
+  unproven: a non-Python backend fixture (Express + Prisma) should be added in Phase 2 or 3
+  so the extractors are not accidentally FastAPI-specific.
+- **mypy is not a pre-commit hook.** It needs the project's dependency set to resolve
+  imports, and pre-commit cannot supply that reliably: `language: system` fails because the
+  git hook does not put the venv on PATH (on Windows `python` becomes the Microsoft Store
+  stub), and `language: python` with a path-plus-extras dependency depends on pip's version.
+  `mypy --strict` is enforced by `make check` / `dev.ps1 check` and by CI, which gates PRs.
+  A hook that only works in an activated shell is worse than no hook.
+- **`black` uses `force-exclude`, not `extend-exclude`.** `extend-exclude` is ignored for
+  files passed explicitly on the command line, which is exactly how pre-commit invokes
+  black — so fixtures were being reformatted by the hook but not by `black .`. Migrations
+  are deliberately *not* excluded: Alembic's post-write hooks format them anyway.
+- **`mixed-line-ending` skips `*.ps1`,** because `.gitattributes` mandates CRLF there.
+  (Related trap: `pathlib.write_text` on Windows translates `\n` to `\r\n`, so a Python
+  script that rewrites a tracked file will introduce CRLF unless it passes `newline="\n"`.)
+
 ---
 
 ## Traps
@@ -252,4 +327,14 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
   emits a richer structured line instead.
 - `tsconfig.app.json` and `vite.config.ts` both declare the `@/` alias. Change both.
 - `backend/fixtures/` deliberately contains insecure, broken code. It is analysis *input*:
-  excluded from ruff, black, mypy and coverage, and never imported by application code.
+  excluded from ruff, black, mypy and coverage, and never imported by application code. The
+  root `.gitignore` has an explicit `!backend/fixtures/**/.env` negation so the one
+  deliberately-committed `.env` is trackable.
+- A column with a server-side `onupdate` (`updated_at`) is **expired after an UPDATE**.
+  Serialising the object then triggers lazy IO and raises `MissingGreenlet`, so a handler
+  that mutates a row must `await session.refresh(obj)` before returning it.
+- `FastAPI 0.143` does not flatten included routes into `app.routes` — it inserts one
+  `_IncludedRouter` per `include_router`. Anything that introspects `app.routes` (as slowapi
+  did) will find nothing. Use `app.openapi()["paths"]` to enumerate the API surface.
+- Fixture manifests use `"implemented": false` for rules that do not exist yet. Flip it in
+  the same commit that adds the rule; it is a to-do marker, not a failing assertion.

@@ -17,9 +17,14 @@ param(
     [ValidateSet(
         'help', 'setup', 'setup-backend', 'setup-frontend', 'hooks',
         'up', 'down', 'clean-volumes', 'api', 'web',
+        'migrate', 'migrate-down', 'migration', 'db-current',
         'check', 'lint', 'format', 'typecheck', 'test', 'build'
     )]
-    [string]$Task = 'help'
+    [string]$Task = 'help',
+
+    # Revision message. Used only by the `migration` task.
+    [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
+    [string]$RevisionMessage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -93,6 +98,10 @@ switch ($Task) {
             @{ n = 'up';             d = 'Start the full stack in Docker' },
             @{ n = 'down';           d = 'Stop the Docker stack' },
             @{ n = 'clean-volumes';  d = 'Stop the stack and delete the database volume' },
+            @{ n = 'migrate';        d = 'Apply all database migrations' },
+            @{ n = 'migrate-down';   d = 'Roll back the most recent migration' },
+            @{ n = 'migration';      d = 'Autogenerate a revision (pass a message)' },
+            @{ n = 'db-current';     d = 'Show the applied revision' },
             @{ n = 'api';            d = 'Run the backend locally with reload' },
             @{ n = 'web';            d = 'Run the frontend dev server' },
             @{ n = 'check';          d = 'lint + typecheck + test (what CI runs)' },
@@ -135,6 +144,28 @@ switch ($Task) {
     'up' { Invoke-Checked -Exe 'docker' -Arguments @('compose', 'up', '--build') }
     'down' { Invoke-Checked -Exe 'docker' -Arguments @('compose', 'down') }
     'clean-volumes' { Invoke-Checked -Exe 'docker' -Arguments @('compose', 'down', '--volumes') }
+
+    'migrate' {
+        Write-Step 'alembic upgrade head'
+        Invoke-Py @('-m', 'alembic', 'upgrade', 'head')
+    }
+
+    'migrate-down' {
+        Write-Step 'alembic downgrade -1'
+        Invoke-Py @('-m', 'alembic', 'downgrade', '-1')
+    }
+
+    'migration' {
+        if ([string]::IsNullOrWhiteSpace($RevisionMessage)) {
+            throw 'A message is required, e.g.: .\scripts\dev.ps1 migration "add issue table"'
+        }
+        Write-Step "alembic revision --autogenerate -m '$RevisionMessage'"
+        Invoke-Py @('-m', 'alembic', 'revision', '--autogenerate', '-m', $RevisionMessage)
+    }
+
+    'db-current' {
+        Invoke-Py @('-m', 'alembic', 'current')
+    }
 
     'api' {
         Write-Step 'Backend on http://localhost:8000 (docs at /docs)'
