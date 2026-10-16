@@ -25,16 +25,18 @@ the seams do not line up.
 
 ## Status
 
-Phase 2 of 6 complete. Importing a repository works, and the facts every cross-layer
-check needs are now extracted with exact file and line locations. The rules that compare
-them land in Phase 3 and the dashboard in Phase 5.
+Phase 3 of 6 complete. **The analysis engine works end to end**: import a repository and
+get a ranked list of cross-layer defects with a health score, each one pointing at an
+exact file and line. 16 rules across four categories, all deterministic — no language
+model is involved in finding anything. Gemini explanations arrive in Phase 4 and the
+dashboard in Phase 5.
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | 0 | Monorepo, container stack, tooling, CI, health endpoints | ✅ |
 | 1 | Schema + migrations, project/analysis API, repo importer, stack detector, seeded fixtures | ✅ |
 | 2 | Tree-sitter parsers and extractors | ✅ |
-| 3 | Contract diff, schema validation, security scanner | — |
+| 3 | Contract diff, schema validation, security scanner, scoring | ✅ |
 | 4 | LangGraph pipeline, Gemini, scoring, SSE | — |
 | 5 | Dashboard UI | — |
 | 6 | Architecture graph, deploy configs | — |
@@ -43,28 +45,30 @@ See [CLAUDE.md](CLAUDE.md) for the engineering conventions and the decision log.
 
 ### Working today
 
-```bash
-# Import a public repo and see what it is built from
-curl -X POST http://localhost:8000/api/v1/projects \
-  -H 'Content-Type: application/json' \
-  -d '{"source_url": "https://github.com/owner/repo"}'
+```python
+from app.analysis.engine import analyse
+from app.services.osv import OsvClient
+
+result = await analyse(repo_path, vulnerability_client=OsvClient())
 ```
 
-```jsonc
-{
-  "project": {
-    "name": "repo",
-    "detected_stack": {
-      "frontend": ["React"],       "frontend_roots": ["frontend"],
-      "backend":  ["FastAPI"],     "backend_roots":  ["backend"],
-      "database": ["SQLAlchemy"],
-      "languages": { "Python": 6, "TypeScript": 4 },
-      "signals": [ /* every conclusion, with the file that proved it */ ]
-    }
-  },
-  "import_summary": { "file_count": 13, "size_bytes": 10399, "duration_ms": 84 }
-}
 ```
+react_fastapi_insecure   score=0/100   15 findings
+  sub-scores: api_contract 100 · schema 100 · security 0 · dependency 63
+
+  MX-SEC-001 [critical] frontend/src/api/config.ts:3   STRIPE_SECRET_KEY = ********JkOm
+  MX-SEC-002 [critical] backend/app/routes.py:15       refund_payment has no authentication
+  MX-SEC-004 [critical] backend/.env:1                 6 variables committed
+  MX-DEP-001 [critical] backend/requirements.txt:6     PyYAML==5.3.1 → 5.4 or later
+  MX-SEC-003 [high]     backend/app/main.py:12-18      allow_origins=['*'] with credentials
+  MX-SEC-005 [medium]   backend/app/main.py:8          FastAPI(debug=True)
+  …
+```
+
+Every finding carries a stable rule ID, a confidence score, the file and line range, the
+source snippet as evidence, and an expected-versus-actual pair. Secrets are **masked in
+stored evidence** — a tool that finds a credential and then saves it has moved the secret,
+not reported it.
 
 Three sample projects with **deliberately seeded cross-layer bugs** live in
 [`backend/fixtures/`](backend/fixtures) — a mismatched API path, a missing database column,

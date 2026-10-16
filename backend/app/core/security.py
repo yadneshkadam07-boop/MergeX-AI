@@ -9,12 +9,14 @@ Nothing here analyses user code; it protects the platform that does.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
 __all__ = [
     "UnsafePathError",
     "is_within",
     "mask_secret",
+    "redact_secrets",
     "redact_url_credentials",
     "safe_archive_member_path",
     "safe_join",
@@ -116,6 +118,32 @@ def mask_secret(value: str | None, *, keep: int = 4) -> str:
     if len(value) <= keep:
         return "*" * len(value)
     return f"{'*' * 8}{value[-keep:]}"
+
+
+def redact_secrets(text: str, secrets: Iterable[str], *, keep: int = 4) -> str:
+    """Mask each of ``secrets`` wherever it appears in ``text``.
+
+    This is what stops MergeX leaking the credentials it finds. A tool that
+    detects a hardcoded API key and then stores that key verbatim in its own
+    issue table has relocated the secret, not reported it -- and the issue
+    table is served over an API and rendered in a browser.
+
+    The last few characters are kept so a developer can recognise *which*
+    credential is meant without the value being usable. Longest secrets are
+    replaced first, so a secret that contains another is not partly revealed
+    by the shorter replacement.
+
+    Args:
+        text: Source text to redact, typically an evidence snippet.
+        secrets: Literal values to mask. Values shorter than 8 characters are
+            skipped: they are too likely to be ordinary words, and masking
+            them would corrupt the snippet without protecting anything.
+        keep: Trailing characters left visible.
+    """
+    redacted = text
+    for secret in sorted({s for s in secrets if s and len(s) >= 8}, key=len, reverse=True):
+        redacted = redacted.replace(secret, mask_secret(secret, keep=keep))
+    return redacted
 
 
 def redact_url_credentials(url: str) -> str:

@@ -1,10 +1,12 @@
 {
   "$comment": [
     "Contract between this fixture and the analysis engine.",
-    "Phase 1 asserts `stack` only. Phases 2-3 assert `findings` as each rule",
-    "lands; the rule IDs below are the intended identifiers, defined by the",
-    "issue taxonomy in app/analysis.",
-    "A fixture finding with `implemented: false` is a to-do, not a failure."
+    "`stack` is asserted from Phase 1, `extraction` from Phase 2, and",
+    "`findings` from Phase 3. Every rule listed here is implemented;",
+    "tests/test_analysis_taxonomy.py fails if a manifest and the rule",
+    "registry disagree in either direction.",
+    "`must_not_report` matters as much as `findings`: it is the correct",
+    "code placed next to the broken code, and it must stay silent."
   ],
   "fixture": "react_fastapi_mismatch",
   "description": "React + axios frontend against a FastAPI backend, with five cross-layer API contract defects. Every layer parses and type-checks on its own; only the seams are wrong.",
@@ -44,7 +46,7 @@
       "symbol": "exportUsers",
       "expected": "A backend route matching GET /api/users/export",
       "actual": "No route is declared for /api/users/export",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-API-002",
@@ -56,7 +58,7 @@
       "expected": "GET /api/users/{user_id}",
       "actual": "GET /api/user/${id}",
       "note": "Differs from a real route by one character; the engine should suggest the near match rather than only reporting it missing.",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-API-003",
@@ -67,7 +69,7 @@
       "symbol": "deactivateUser",
       "expected": "DELETE /api/users/{user_id}/deactivate",
       "actual": "POST /api/users/${id}/deactivate",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-API-004",
@@ -79,7 +81,7 @@
       "expected": "{ email, full_name } per UserCreate",
       "actual": "{ email, fullName }",
       "note": "camelCase/snake_case drift. The engine must not flag this where an alias or a serialiser config reconciles the two.",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-API-005",
@@ -90,7 +92,7 @@
       "symbol": "deleteAllTasks",
       "expected": "An Authorization header, since the route depends on require_admin",
       "actual": "No Authorization header is set on the request or the axios client",
-      "implemented": false
+      "implemented": true
     }
   ],
   "must_not_report": [

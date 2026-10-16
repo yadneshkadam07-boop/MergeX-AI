@@ -1,8 +1,12 @@
 {
   "$comment": [
     "Contract between this fixture and the analysis engine.",
-    "Phase 1 asserts `stack` only. Phases 2-3 assert `findings` as each rule",
-    "lands; `implemented: false` marks a rule that does not exist yet."
+    "`stack` is asserted from Phase 1, `extraction` from Phase 2, and",
+    "`findings` from Phase 3. Every rule listed here is implemented;",
+    "tests/test_analysis_taxonomy.py fails if a manifest and the rule",
+    "registry disagree in either direction.",
+    "`must_not_report` matters as much as `findings`: it is the correct",
+    "code placed next to the broken code, and it must stay silent."
   ],
   "fixture": "react_fastapi_schema_drift",
   "description": "SQLAlchemy models drifted from the SQL migrations that actually built the database. The ORM layer is internally consistent and the migrations are valid SQL; they simply disagree with each other.",
@@ -46,7 +50,7 @@
       "expected": "products.warehouse_code VARCHAR(16) in the migrations",
       "actual": "0002_create_products.sql never creates the column",
       "note": "Breaks every SELECT against products, not just writes.",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-DB-002",
@@ -58,7 +62,7 @@
       "expected": "NUMERIC(10, 2) per the model",
       "actual": "INTEGER per 0002_create_products.sql",
       "note": "Silent precision loss on money, which is worse than a crash.",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-DB-003",
@@ -69,7 +73,7 @@
       "symbol": "recently_counted",
       "expected": "products.last_counted_at to exist",
       "actual": "Raw SQL selects and orders by last_counted_at, which is undefined",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-DB-004",
@@ -80,7 +84,7 @@
       "symbol": "products.supplier_id",
       "expected": "supplier_id INTEGER REFERENCES suppliers(id)",
       "actual": "supplier_id INTEGER with no REFERENCES clause",
-      "implemented": false
+      "implemented": true
     },
     {
       "rule_id": "MX-DB-005",
@@ -91,7 +95,7 @@
       "symbol": "products.supplier_id",
       "expected": "An index on the join column",
       "actual": "No index; the supplier join is a sequential scan",
-      "implemented": false
+      "implemented": true
     }
   ],
   "must_not_report": [

@@ -34,6 +34,7 @@ from app.services.parsers.base import SourceFile, SourceLocation, iter_source_fi
 from app.services.parsers.sql_parser import SQL_SUFFIXES, ParsedStatement, parse_sql_file
 
 __all__ = [
+    "KNOWN_TYPE_FAMILIES",
     "DbColumn",
     "DbForeignKey",
     "DbIndex",
@@ -41,6 +42,7 @@ __all__ = [
     "DbTable",
     "canonical_type",
     "extract_db_schema",
+    "is_known_family",
 ]
 
 log = get_logger("app.extractors.db_schema")
@@ -101,6 +103,19 @@ _TYPE_FAMILIES: Final[dict[str, str]] = {
 }
 
 _TYPE_PARAMS_RE: Final[re.Pattern[str]] = re.compile(r"\s*\(.*\)\s*$")
+
+
+# The families the mapping tables actually recognise. Anything else is a
+# fallback to the type's own lower-cased text, which is *not* comparable: a
+# vendor type spelled `MY_CUSTOM_TYPE` in SQL and `SomeVendorType` in the ORM
+# describes one column, and comparing those strings would report a type
+# mismatch on correct code.
+KNOWN_TYPE_FAMILIES: Final[frozenset[str]] = frozenset(_TYPE_FAMILIES.values())
+
+
+def is_known_family(family: str) -> bool:
+    """Whether a family came from the mapping table rather than a fallback."""
+    return family in KNOWN_TYPE_FAMILIES
 
 
 def canonical_type(sql_type: str | None) -> str:

@@ -22,7 +22,7 @@ captured from the callee rather than assumed.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
 
@@ -121,6 +121,15 @@ class FrontendApiCall:
     callee: str
     """The callee as written, e.g. ``api.get`` -- useful in the report."""
     has_auth_header: bool = False
+    ambient_auth_possible: bool = False
+    """True when this file configures credentials outside the call itself.
+
+    An axios instance created with a default ``Authorization`` header, or a
+    request interceptor that adds one, attaches credentials to every call
+    without any of them mentioning auth. A rule that reported those calls as
+    unauthenticated would be wrong on a correctly-written client, so this flag
+    exists to suppress ``MX-API-005`` for them.
+    """
     request_fields: tuple[str, ...] = ()
     """Keys of a statically-known request body object, in source order."""
     enclosing_function: str | None = None
@@ -207,6 +216,7 @@ def extract_from_module(module: ParsedModule) -> list[FrontendApiCall]:
     """Extract calls from one parsed module."""
     source = module.source
     base_urls = _axios_base_urls(module)
+    ambient_auth = _has_ambient_auth(module)
     results: list[FrontendApiCall] = []
 
     for captures in module.query(_CALL_QUERY):
@@ -231,7 +241,9 @@ def extract_from_module(module: ParsedModule) -> list[FrontendApiCall]:
             base_urls=base_urls,
         )
         if extracted is not None:
-            results.append(extracted)
+            results.append(
+                extracted if not ambient_auth else replace(extracted, ambient_auth_possible=True)
+            )
 
     return results
 
@@ -595,6 +607,55 @@ def _fields_of(module: ParsedModule, node: Node) -> tuple[str, ...]:
             # `{ email, fullName }` -- the shorthand form.
             names.append(node_text(module.source, child))
     return tuple(names)
+
+
+def _has_ambient_auth(module: ParsedModule) -> bool:
+    """True when this file attaches credentials outside individual calls.
+
+    Three real patterns, any of which means a call with no visible auth may
+    still be authenticated:
+
+    * ``axios.create({ headers: { Authorization: ... } })`` -- a default header
+    * ``api.defaults.headers.common.Authorization = ...``
+    * ``api.interceptors.request.use(...)`` -- added per request
+
+    Deliberately coarse. Proving that an interceptor *does* add credentials
+    would need cross-module data flow; the point here is only to establish
+    that it *might*, which is enough to withhold a finding. Withholding a true
+    positive costs less than reporting a false one.
+    """
+    text = module.source.text
+
+    if ".interceptors.request" in text:
+        return True
+    if "defaults.headers" in text:
+        return True
+
+    # A client created with an auth-ish default header.
+    pattern = """
+    (call_expression
+      function: (member_expression) @factory
+      arguments: (arguments (object) @config))
+    """
+    for captures in module.query(pattern):
+        factory = node_text(module.source, captures["factory"][0])
+        if not factory.endswith((".create", ".extend")):
+            continue
+        config = _object_pairs(module, captures["config"][0])
+        headers = config.get("headers")
+        if headers is not None and _object_has_auth_key(module, headers):
+            return True
+        if "withcredentials" in config:
+            return True
+    return False
+
+
+def _object_has_auth_key(module: ParsedModule, node: Node) -> bool:
+    """True when an object literal declares a known auth header."""
+    if node.type != "object":
+        text = node_text(module.source, node).lower()
+        return any(hint in text for hint in ("auth", "token", "apikey", "api_key"))
+    return any(key in _AUTH_HEADER_NAMES for key in _object_pairs(module, node))
 
 
 def _axios_base_urls(module: ParsedModule) -> dict[str, str]:

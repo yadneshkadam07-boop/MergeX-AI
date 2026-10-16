@@ -183,8 +183,8 @@ floor at 0. Per-category sub-scores are computed the same way over that category
 | 0 | Monorepo scaffold, docker-compose, lint/format/CI, health endpoint | **done** |
 | 1 | DB models, Alembic, project/analysis CRUD, repo importer, stack detector, seeded fixtures | **done** |
 | 2 | Tree-sitter parsers + extractors, asserted against all three fixtures | **done** |
-| 3 | API-contract diff, schema validation, security scanner | next |
-| 4 | LangGraph workflow, Gemini integration, synthesizer, scoring, SSE | |
+| 3 | Rule engines (16 rules), OSV lookup, dedupe, scoring | **done** |
+| 4 | LangGraph workflow, Gemini explanations, SSE streaming | next |
 | 5 | Frontend pages wired to the API | |
 | 6 | Architecture graph, polish, README screenshots, deploy configs | |
 
@@ -361,6 +361,77 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
   "newest first" falls back to comparing random UUIDs — a genuinely flaky ordering that a
   Phase 1 test caught only intermittently. The Python default supplies microseconds on every
   backend. No migration: neither default changes the DDL.
+### Phase 3
+
+- **Precision is the governing constraint, not recall.** A false positive on correct code is
+  verifiable by the user in seconds, and from then on they disbelieve every other finding.
+  Every rule therefore starts from a reason to stay *silent*, and the silence conditions are
+  tested as hard as the detections. `must_not_report` in each fixture manifest is asserted
+  end to end in `tests/test_analysis_engine.py`.
+- **A rule ID is a public contract.** It appears in stored issues, the API, fixture manifests
+  and eventually users' CI config, so an ID is never reused or repurposed. Retiring a rule
+  means marking it retired.
+- **`tests/test_analysis_taxonomy.py` enforces the manifests both ways:** a manifest claiming
+  `implemented: true` for an unregistered rule fails, and a registered rule that no manifest
+  exercises fails. Both failure modes were verified by deliberately breaking a manifest.
+- **Fingerprints identify a root cause, never an occurrence.** They exclude file and line, so
+  one typo'd path called from three components merges into one finding with three locations —
+  and a finding keeps its identity when surrounding code moves, so it can be recognised
+  across runs.
+- **Evidence is redacted at construction.** A scanner that finds a hardcoded key and stores
+  it verbatim in its own issue table has moved the secret, not reported it — and that table
+  is served over an API and rendered in a browser. `make_finding(secrets=...)` masks the
+  literals; `test_analysis_engine.py::test_no_finding_leaks_a_secret` asserts no fixture
+  credential appears anywhere in any finding.
+- **Deductions are per issue, not per occurrence.** Otherwise one typo in a shared helper
+  dominates the score, which would make the number describe code structure rather than
+  correctness.
+- **A category with no issues scores 100, but carries `analysed=False` when there was
+  nothing to check.** "No database" and "a perfect database" must not render identically.
+- **The engine reports what it could not check.** A skipped category, an unreachable OSV, an
+  unresolved mount — each produces a note. "We found nothing" and "we could not look" mean
+  very different things to someone reading a score.
+- **Absence checks are disabled when absence cannot be proven.** If any router mount could
+  not be traced to an application, some route paths are incomplete, so MX-API-001 and
+  MX-API-002 are skipped entirely rather than reported with a caveat.
+- **MX-API-004 fires only on casing drift**, where the same field exists under the other
+  casing. A field the model simply lacks could be many benign things. A Pydantic `alias`,
+  `alias_generator` or `extra="allow"` suppresses the rule, because the accepted names can
+  then no longer be enumerated.
+- **MX-API-005 is suppressed by ambient auth.** An axios instance with a default
+  `Authorization` header, or any `interceptors.request` use, means a call with no visible
+  credentials may still be authenticated. The check is deliberately coarse: proving an
+  interceptor *does* add credentials needs cross-module data flow, and withholding a true
+  positive costs less than reporting a false one.
+- **MX-SEC-002 reports an inconsistency, never "this route has no auth."** The latter is true
+  of every public endpoint in every project. A sensitive route (narrow keyword list — `user`
+  and `item` are far too common to carry signal) whose siblings are protected is nearly
+  always an oversight. This is what keeps `create_task` quiet next to a protected
+  `delete_all_tasks`.
+- **Secret detection needs two signals:** a provider prefix (`sk_live_`, `AKIA`, `eyJ`) or a
+  credential-shaped name with a high-entropy literal. Entropy alone flags UUIDs, hashes,
+  minified bundles and test fixtures. Placeholders, env lookups without a literal default,
+  plain URLs and version strings are excluded explicitly.
+- **A committed `.env` is one finding, not one per line.** The root cause is that the file is
+  tracked, so MX-SEC-001 skips `.env` files and MX-SEC-004 reports the file with every value
+  masked and only the *keys* in metadata.
+- **Only exactly-pinned dependency versions are checked.** `^1.6.0` resolves to whatever was
+  installed; reporting the range's lower bound would flag already-patched projects. Ranges
+  are counted and surfaced as a note so the gap is visible.
+- **OSV is behind `VulnerabilityClient`**, so tests inject recorded advisories and never
+  touch the network. An outage degrades: the report carries `degraded_reason`, the dependency
+  check contributes no findings, and every other finding is still reported. One live test
+  exists, marked `network` and excluded by default.
+- **CVSS vectors are not decoded.** Computing a base score from a vector string is a
+  specification unto itself and getting it subtly wrong would mis-rank findings. Severity
+  comes from `database_specific.severity` or a numeric score; absent both, the rule default
+  is used and the finding says so.
+- **Type mismatches require both sides to be *recognised* families.** An unknown type falls
+  back to its own lower-cased text, so `MY_CUSTOM_TYPE` against `SomeVendorType` would
+  compare unequal and report a mismatch on correct code. Caught by a test.
+- **`request_models.py` was added in Phase 3**, not Phase 2: MX-API-004 cannot run without
+  the backend model's field names, and there was no earlier consumer for them.
+
 - **mypy is not a pre-commit hook.** It needs the project's dependency set to resolve
   imports, and pre-commit cannot supply that reliably: `language: system` fails because the
   git hook does not put the venv on PATH (on Windows `python` becomes the Microsoft Store
