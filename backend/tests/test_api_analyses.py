@@ -36,6 +36,24 @@ def make_zip(members: dict[str, str]) -> bytes:
     return buffer.getvalue()
 
 
+@pytest.fixture(autouse=True)
+def do_not_run_the_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep queued analyses queued.
+
+    ``TestClient`` runs background tasks inline before returning the response,
+    so without this a queued run would have *finished* by the time the next
+    assertion executes -- and the concurrency guard, which exists to stop a
+    double-click starting two clones, would appear not to work. The pipeline
+    itself is covered in ``test_analysis_runner.py``; these tests are about
+    the record of a run.
+    """
+
+    async def do_nothing(*args: object, **kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.api.routes.analyses._execute", do_nothing)
+
+
 @pytest.fixture
 def project_id(client: TestClient) -> str:
     """A project created through the real upload endpoint."""

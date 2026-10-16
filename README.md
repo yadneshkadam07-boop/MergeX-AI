@@ -25,11 +25,11 @@ the seams do not line up.
 
 ## Status
 
-Phase 3 of 6 complete. **The analysis engine works end to end**: import a repository and
-get a ranked list of cross-layer defects with a health score, each one pointing at an
-exact file and line. 16 rules across four categories, all deterministic — no language
-model is involved in finding anything. Gemini explanations arrive in Phase 4 and the
-dashboard in Phase 5.
+Phase 4 of 6 complete. **The backend is feature-complete**: queue an analysis over the API,
+watch it stream its progress, and read a report with a health score, sub-scores, and every
+finding explained with a concrete before/after fix. 16 rules across four categories, all
+deterministic — no language model is involved in finding anything, and the finding set is
+provably identical with and without Gemini. The dashboard arrives in Phase 5.
 
 | Phase | Scope | State |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ dashboard in Phase 5.
 | 1 | Schema + migrations, project/analysis API, repo importer, stack detector, seeded fixtures | ✅ |
 | 2 | Tree-sitter parsers and extractors | ✅ |
 | 3 | Contract diff, schema validation, security scanner, scoring | ✅ |
-| 4 | LangGraph pipeline, Gemini, scoring, SSE | — |
+| 4 | LangGraph pipeline, Gemini explanations, SSE progress, report endpoint | ✅ |
 | 5 | Dashboard UI | — |
 | 6 | Architecture graph, deploy configs | — |
 
@@ -45,12 +45,26 @@ See [CLAUDE.md](CLAUDE.md) for the engineering conventions and the decision log.
 
 ### Working today
 
-```python
-from app.analysis.engine import analyse
-from app.services.osv import OsvClient
-
-result = await analyse(repo_path, vulnerability_client=OsvClient())
+```bash
+# Upload a project, queue a run, watch it, read the report.
+curl -F file=@project.zip localhost:8000/api/v1/projects/upload
+curl -X POST localhost:8000/api/v1/projects/$PROJECT_ID/analyses -d '{}'
+curl -N localhost:8000/api/v1/analyses/$ANALYSIS_ID/events   # SSE progress
+curl localhost:8000/api/v1/analyses/$ANALYSIS_ID/report
 ```
+
+```
+event: stack       {"status":"completed","message":"Detected React, FastAPI"}
+event: api         {"status":"completed","finding_count":5,"total_findings":5}
+event: schema      {"status":"skipped","message":"No migrations or no models"}
+event: security    {"status":"completed","finding_count":0,"total_findings":5}
+event: synthesis   {"status":"completed","finding_count":5}
+event: complete    {"status":"completed","total_findings":5,"data":{"score":46}}
+```
+
+Reconnect with `Last-Event-ID` and the stream resumes where it left off; a client that
+connects after the run has finished still receives the whole history and the terminal
+event. Both success and failure emit `complete`, so the UI always knows when to stop.
 
 ```
 react_fastapi_insecure   score=0/100   15 findings
@@ -68,7 +82,29 @@ react_fastapi_insecure   score=0/100   15 findings
 Every finding carries a stable rule ID, a confidence score, the file and line range, the
 source snippet as evidence, and an expected-versus-actual pair. Secrets are **masked in
 stored evidence** — a tool that finds a credential and then saves it has moved the secret,
-not reported it.
+not reported it — and masked again before any snippet is sent to a model.
+
+Each finding also carries an explanation and a concrete fix:
+
+```
+MX-API-002 [critical] frontend/src/api/users.ts:7   confidence 1.0
+
+  The call asks for GET /api/user/{}, but the backend serves GET /api/users/{} —
+  the two differ by a single character. The request returns 404, and because the
+  path reads almost correctly this is easy to miss in review.
+
+  fix:    At frontend/src/api/users.ts:7, change the request path from
+          '/api/user/${id}' to '/api/users/${id}' to match get_user.
+  before: const response = await api.get(`/api/user/${id}`);
+  after:  const response = await api.get(`/api/users/${id}`);
+```
+
+**That output needs no API key.** Each of the 16 rules has a hand-written explanation and
+fix template, so the whole product runs offline; Gemini rewrites the prose when
+`GEMINI_API_KEY` is set. It can only ever *add* an explanation and a fix to a finding that
+deterministic analysis already produced — it cannot create, remove, merge or re-rank one,
+and a test asserts the finding set is byte-identical with and without it. Invalid model
+output is retried once and then falls back to the template for that batch alone.
 
 Three sample projects with **deliberately seeded cross-layer bugs** live in
 [`backend/fixtures/`](backend/fixtures) — a mismatched API path, a missing database column,
@@ -228,11 +264,34 @@ engine.
              health score + ranked issues
 ```
 
+The three rule groups are independent nodes with no edges between them, which is what makes
+LangGraph run them concurrently. **Each catches its own exceptions.** If one crashes the
+other two still finish, the synthesiser still runs, and the report names the category that
+failed — because "no security issues found" and "the security analysis crashed" must never
+look the same.
+
 Progress is streamed to the browser over Server-Sent Events, so the live analysis page shows
-each agent finishing in turn.
+each agent finishing in turn, with a finding count per stage.
 
 **Health score** starts at 100 and deducts 15 per critical issue, 8 per high, 3 per medium
-and 1 per low, with a floor of 0. Per-category sub-scores use the same formula.
+and 1 per low, with a floor of 0. Per-category sub-scores use the same formula. A category
+reports `analysed: false` when there was nothing of that kind to check, so the UI can say
+"not applicable" rather than "perfect".
+
+### What Gemini is and is not allowed to do
+
+| | |
+| --- | --- |
+| **Finds issues** | Tree-sitter, Python `ast`, sqlglot, rule engines. Deterministic. |
+| **Explains issues** | Gemini, with structured JSON output validated by Pydantic. |
+| **Can the model add a finding?** | No. Explanations are matched back to findings by fingerprint, so an invented ID matches nothing. |
+| **Can it remove or re-rank one?** | No. The code iterates over findings, never over the model's response. |
+| **If it returns nonsense?** | Retried once, then the per-rule template. The analysis never fails. |
+| **If there is no API key?** | Templates for everything. The product runs fully offline. |
+| **Are snippets redacted?** | Yes — at finding construction, and again when the prompt is built. |
+
+Token usage is logged per analysis, and the report says how many explanations came from the
+model versus the templates.
 
 ---
 
@@ -276,7 +335,8 @@ docker-compose.yml
 ## Roadmap
 
 Built now: repo import, API-contract validation, schema-drift detection, security scan,
-health score, dashboard with architecture graph.
+dependency advisories, health score, AI explanations with concrete fixes, live progress
+streaming, and the report API. Still to come: the dashboard and the architecture graph.
 
 Deliberately deferred: documentation generation, deployment readiness checks, a PR comment
 bot, and a VS Code extension.

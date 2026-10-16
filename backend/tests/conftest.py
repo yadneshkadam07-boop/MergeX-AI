@@ -198,3 +198,43 @@ def fixture_manifest() -> Callable[[str], dict[str, Any]]:
         return loaded
 
     return _load
+
+
+# The credentials seeded into ``react_fastapi_insecure``, verbatim.
+#
+# Declared once so that every test which asserts "this must never leave the
+# machine" checks the same strings: the stored issue rows, the Gemini prompts,
+# and the API responses. ``test_fixture_credentials_are_still_present`` fails
+# if the fixture is edited and these go stale, because a redaction test that
+# searches for a string no longer in the fixture passes while proving nothing.
+FIXTURE_CREDENTIALS: tuple[str, ...] = (
+    "xK9mPq2wRtY7",  # the password inside DATABASE_URL
+    "8f4a9c2e1b7d3f6a0e5c8b2d9f1a4e7c",  # JWT_SIGNING_KEY
+    "sk_live_51H8xQ2KmNvR7pLdX4bWcZaYeTfUgIhJkOm",  # STRIPE_SECRET_KEY
+    "AKIAIOSFODNN7EXAMPLE",  # AWS_ACCESS_KEY_ID
+    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",  # AWS_SECRET_ACCESS_KEY
+    "SG.aB3dEfGhIjKlMnOpQrStUv.WxYz1234567890AbCdEfGhIjKlMnOpQrStUvWxYz",
+    # SUPABASE_SERVICE_ROLE_KEY, hardcoded in the frontend bundle
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.c2VydmljZV9yb2xlX2tleV9mb3JfdGVzdGluZw.9pQ7",
+)
+
+
+@pytest.fixture
+def fixture_credentials() -> tuple[str, ...]:
+    """The credentials seeded into the insecure fixture."""
+    return FIXTURE_CREDENTIALS
+
+
+def test_fixture_credentials_are_still_present() -> None:
+    """Guards every redaction test in the suite against fixture drift."""
+    sources = "\n".join(
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in (FIXTURES_DIR / "react_fastapi_insecure").rglob("*")
+        if path.is_file() and path.name != "expected_findings.json"
+    )
+    missing = [secret for secret in FIXTURE_CREDENTIALS if secret not in sources]
+
+    assert missing == [], (
+        f"These credentials are no longer in the fixture, so the tests that "
+        f"search for them prove nothing: {missing}"
+    )

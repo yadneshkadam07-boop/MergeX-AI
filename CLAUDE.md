@@ -184,8 +184,8 @@ floor at 0. Per-category sub-scores are computed the same way over that category
 | 1 | DB models, Alembic, project/analysis CRUD, repo importer, stack detector, seeded fixtures | **done** |
 | 2 | Tree-sitter parsers + extractors, asserted against all three fixtures | **done** |
 | 3 | Rule engines (16 rules), OSV lookup, dedupe, scoring | **done** |
-| 4 | LangGraph workflow, Gemini explanations, SSE streaming | next |
-| 5 | Frontend pages wired to the API | |
+| 4 | LangGraph workflow, Gemini explanations, SSE streaming | **done** |
+| 5 | Frontend pages wired to the API | next |
 | 6 | Architecture graph, polish, README screenshots, deploy configs | |
 
 Explicitly **out of scope** for now (stub only): documentation generation, deployment
@@ -432,6 +432,63 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
 - **`request_models.py` was added in Phase 3**, not Phase 2: MX-API-004 cannot run without
   the backend model's field names, and there was no earlier consumer for them.
 
+### Phase 4
+
+- **The model cannot change the finding set, structurally.** `apply_explanations` iterates
+  over the *findings* and looks each one up by fingerprint. An invented `finding_id` matches
+  nothing and is dropped; an omitted one gets a template. This is not a prompt instruction —
+  the model's response is never iterated, so it has no way to add, remove or re-rank
+  anything. `tests/test_agents_graph.py` runs all three fixtures with the template
+  explainer, a well-behaved model and a deliberately hostile one that invents findings,
+  drops the first and reverses the rest, and asserts identical fingerprints, severities,
+  locations and score across all three.
+- **Offline is the product, not a degraded mode.** With no API key `build_explainer` returns
+  `TemplateExplainer`, which has a hand-written explanation and a concrete before/after for
+  each of the 16 rules, with real file and line references. Gemini improves the prose; it
+  does not enable the feature. Every test in the suite except the live one runs this path.
+- **Two layers of fallback, because "never fail the analysis" has to survive the fallback
+  failing.** Configured explainer → template explainer → empty result. A finding with no
+  prose still carries its description, evidence and expected/actual, so the worst outcome
+  is plainer wording, never a lost report.
+- **Redaction masks by name as well as by shape.** The provider patterns (`sk_live_`,
+  `AKIA`, `eyJ`, `SG.`) cannot recognise a bare AWS secret key or a 32-character signing
+  key — nothing about the string gives it away. What does is the identifier it is assigned
+  to, so `_CREDENTIAL_ASSIGNMENT` masks the value of any `*SECRET*`/`*TOKEN*`/`*KEY*`
+  assignment and keeps the name, which is the part the model needs. Over-masking costs a
+  little prose quality; under-masking sends a live credential to a third party. The seven
+  credentials seeded in the insecure fixture are declared once in `tests/conftest.py`, and
+  a guard test fails if the fixture is edited so that they no longer appear in it —
+  otherwise a redaction test would search for a string that is not there and pass while
+  proving nothing.
+- **A rule group that crashes is isolated; extraction that crashes is not.** `_guard`
+  catches per-node and records a `GroupError`, so the other two branches finish and the
+  report names the failed category — "no security issues" and "the security analysis
+  crashed" must never look the same. Extraction feeds all three branches, so its failure is
+  a failed analysis, reported as one. Tested by making each rule *engine* raise: patching
+  the node itself would remove the guard being tested.
+- **Crash-isolation tests need a repository with defects in all three categories.** Each
+  seeded fixture deliberately exercises one, so `tests/test_agents_graph.py` merges the
+  schema-drift repository with the insecure one's routes and secrets.
+- **The event bus keeps a bounded, replayable buffer per analysis.** A reconnecting client
+  sends `Last-Event-ID` and receives exactly what it missed; one that connects after the run
+  finished gets the whole story and the terminal event rather than a stream that hangs.
+  Both success and failure publish a terminal `complete` event, because a stream that simply
+  goes quiet is indistinguishable from a slow one.
+- **`subscribe` drains its queue before honouring `finished_at`.** An analysis that finishes
+  between the replay and the live loop leaves events in the subscriber's queue; returning on
+  `finished_at` alone dropped them, the terminal event included. Found by a test, fixed in
+  `app/core/events.py`.
+- **The create-analysis handler commits explicitly** rather than leaving it to the
+  dependency's teardown. The background task opens its own session and must be able to see
+  the row; relying on the relative ordering of teardown and background execution is exactly
+  the kind of assumption that breaks on a framework upgrade.
+- **The bus is in-process.** Correct for a single instance, wrong for multiple replicas: a
+  client would connect to a replica that never saw the analysis. Replacing it with Redis
+  pub/sub behind the same interface is the deployment prerequisite.
+- **Token usage is logged per analysis** (calls, prompt, output, total, and the
+  template/model split). An LLM feature with no cost visibility is one nobody can run in
+  production.
+
 - **mypy is not a pre-commit hook.** It needs the project's dependency set to resolve
   imports, and pre-commit cannot supply that reliably: `language: system` fails because the
   git hook does not put the venv on PATH (on Windows `python` becomes the Microsoft Store
@@ -472,3 +529,16 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
   did) will find nothing. Use `app.openapi()["paths"]` to enumerate the API surface.
 - Fixture manifests use `"implemented": false` for rules that do not exist yet. Flip it in
   the same commit that adds the rule; it is a to-do marker, not a failing assertion.
+- `TestClient` runs `BackgroundTasks` **inline, before returning the response**. A test that
+  queues an analysis therefore sees it already finished, which silently defeats the
+  concurrency guard in `POST /projects/{id}/analyses`. `tests/test_api_analyses.py` stubs
+  `_execute` for that reason; `tests/test_api_report.py` relies on the same behaviour
+  deliberately, to run the whole pipeline through the API in one request.
+- `sse_starlette` caches its shutdown `asyncio.Event` at module level, bound to the loop
+  that first created it. `TestClient` uses a fresh loop per request, so the *second* SSE
+  request in a session raises "bound to a different event loop" unless
+  `AppStatus.should_exit_event` is reset between tests. A server has one loop, so this is a
+  test-transport artefact, not an endpoint defect.
+- A node replaced with `monkeypatch.setattr(graph_module, "api_contract_node", ...)` loses
+  its `_guard` wrapper, because the decorator is applied at definition time. To test crash
+  isolation, make the *rule engine* raise instead.

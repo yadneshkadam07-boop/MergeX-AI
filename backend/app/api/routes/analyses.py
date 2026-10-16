@@ -1,20 +1,30 @@
-"""Analysis endpoints: queue a run, list runs, read one, delete.
+"""Analysis endpoints: queue a run, watch it, read its report.
 
-Phase 1 manages the *record* of a run. Executing it — the LangGraph pipeline
-and the SSE progress stream — lands in Phase 4, which is why a created
-analysis stays ``pending`` and why there is no endpoint to mutate its status
+Creating an analysis schedules the LangGraph pipeline as a background task
+and returns immediately; the client follows progress over SSE at
+``/analyses/{id}/events`` and reads the result from
+``/analyses/{id}/report``.
+
+There is deliberately no endpoint for setting an analysis's status. A run's
+state is owned by the runner, so it cannot be driven into an inconsistent one
 from outside.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import case, func, select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
+from sse_starlette.sse import EventSourceResponse
 
-from app.api.dependencies import PaginationDep, SessionDep
+from app.api.dependencies import PaginationDep, SessionDep, SettingsDep
+from app.core.config import Settings
+from app.core.events import EventStatus, Stage, event_bus
 from app.core.logging import get_logger
 from app.models.analysis import Analysis
 from app.models.enums import AnalysisStatus, Severity
@@ -28,6 +38,13 @@ from app.schemas.analysis import (
     IssueRead,
 )
 from app.schemas.common import CONFLICT_RESPONSE, NOT_FOUND_RESPONSE, Page
+from app.schemas.report import (
+    AnalysisReport,
+    CategoryScoreOut,
+    ReportIssue,
+    ScoreOut,
+)
+from app.services.analysis_runner import AnalysisRunner
 
 log = get_logger("app.api.analyses")
 
@@ -48,6 +65,9 @@ async def create_analysis(
     project_id: uuid.UUID,
     payload: AnalysisCreate,
     session: SessionDep,
+    settings: SettingsDep,
+    background: BackgroundTasks,
+    request: Request,
 ) -> AnalysisRead:
     """Create a pending run for a project.
 
@@ -89,10 +109,49 @@ async def create_analysis(
         analysis.stack = {"requested_ref": payload.source_ref}
 
     session.add(analysis)
-    await session.flush()
+    # Committed here, not left to the dependency's teardown: the background
+    # task opens its own session and must be able to see this row. Relying on
+    # the relative ordering of dependency teardown and background execution is
+    # exactly the kind of assumption that breaks on a framework upgrade.
+    await session.commit()
+    await session.refresh(analysis)
+
+    event_bus.publish(analysis.id, Stage.QUEUED, EventStatus.STARTED, "Analysis queued")
+    # Scheduled rather than awaited: a clone plus a full analysis takes far
+    # longer than a request should. The client follows /events from here.
+    background.add_task(_execute, request.app, settings, analysis.id)
 
     log.info("analysis_queued", analysis_id=str(analysis.id), project_id=str(project_id))
     return AnalysisRead.model_validate(analysis)
+
+
+async def _execute(app: Any, settings: Settings, analysis_id: uuid.UUID) -> None:
+    """Run an analysis in the background, in its own session.
+
+    The request's session is closed by the time this runs, so a new one is
+    opened from the application's factory. Failures are recorded on the row
+    and published as a terminal event by the runner; this wrapper exists only
+    to catch a failure of the runner itself, which would otherwise vanish
+    into the task group.
+    """
+    factory = getattr(app.state, "session_factory", None)
+    if factory is None:  # pragma: no cover - misconfiguration
+        log.error("analysis_not_started", reason="no_session_factory")
+        return
+
+    runner = AnalysisRunner(settings=settings, bus=event_bus)
+    try:
+        async with factory() as session:
+            await runner.run(session, analysis_id)
+            await session.commit()
+    except Exception:  # noqa: BLE001 - a background task must not die silently
+        log.exception("analysis_task_crashed", analysis_id=str(analysis_id))
+        event_bus.publish(
+            analysis_id,
+            Stage.COMPLETE,
+            EventStatus.FAILED,
+            "The analysis task failed unexpectedly.",
+        )
 
 
 @project_analyses_router.get(
@@ -276,3 +335,167 @@ async def _issue_counts_for(
         )
         for analysis_id, bucket in tallies.items()
     }
+
+
+# ---------------------------------------------------------------------------
+# Live progress
+# ---------------------------------------------------------------------------
+
+
+@analyses_router.get(
+    "/{analysis_id}/events",
+    summary="Stream analysis progress (SSE)",
+    responses=NOT_FOUND_RESPONSE,
+)
+async def stream_analysis_events(
+    analysis_id: uuid.UUID,
+    request: Request,
+    session: SessionDep,
+) -> EventSourceResponse:
+    """Server-Sent Events for one analysis.
+
+    Reconnection is supported through the standard ``Last-Event-ID`` header,
+    which browsers send automatically: everything the client missed is
+    replayed before the live stream resumes. A client that connects after the
+    run has finished still receives the whole history and the terminal event,
+    rather than an open stream that never produces anything.
+
+    The stream always ends with a ``complete`` event, on success and on
+    failure alike, so a client knows when to stop listening.
+    """
+    analysis = await session.get(Analysis, analysis_id)
+    if analysis is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found.")
+
+    last_event_id = _last_event_id(request)
+
+    async def publisher() -> Any:
+        async for event in event_bus.subscribe(analysis_id, after_id=last_event_id):
+            if await request.is_disconnected():
+                break
+            if event is None:
+                # Keeps proxies from closing an idle connection. A comment
+                # frame is ignored by EventSource clients.
+                yield {"comment": "keep-alive"}
+                continue
+            yield {
+                "id": str(event.id),
+                "event": event.stage.value,
+                "data": json.dumps(event.to_dict(), separators=(",", ":")),
+            }
+
+    return EventSourceResponse(publisher())
+
+
+def _last_event_id(request: Request) -> int:
+    """Parse ``Last-Event-ID``, tolerating anything a client might send."""
+    raw = request.headers.get("last-event-id") or request.query_params.get("last_event_id")
+    try:
+        return max(0, int(raw)) if raw else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+
+@analyses_router.get(
+    "/{analysis_id}/report",
+    response_model=AnalysisReport,
+    summary="Full analysis report",
+    responses=NOT_FOUND_RESPONSE,
+)
+async def get_analysis_report(analysis_id: uuid.UUID, session: SessionDep) -> AnalysisReport:
+    """Everything needed to render the dashboard, in one response.
+
+    Score, sub-scores, every issue with its explanation and concrete fix, the
+    detected stack, and the caveats about what could not be checked. The
+    paginated issue list remains available for very large results.
+    """
+    analysis = await session.get(Analysis, analysis_id, options=[selectinload(Analysis.project)])
+    if analysis is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Analysis not found.")
+
+    issues = list(
+        await session.scalars(
+            select(Issue)
+            .where(Issue.analysis_id == analysis_id)
+            .order_by(_severity_rank(), Issue.detected_by.asc(), Issue.file_path.asc())
+        )
+    )
+
+    stack = analysis.stack or {}
+    return AnalysisReport(
+        analysis_id=analysis.id,
+        project_id=analysis.project_id,
+        project_name=analysis.project.name,
+        status=analysis.status,
+        score=_score_out(analysis.category_scores),
+        issues=[_report_issue(issue) for issue in issues],
+        stack={k: v for k, v in stack.items() if k not in _STACK_SIDECAR_KEYS},
+        notes=list(stack.get("notes") or []),
+        failed_groups=list(stack.get("failed_groups") or []),
+        counts=dict(stack.get("counts") or {}),
+        explanation_sources=dict(stack.get("explanation_sources") or {}),
+        commit_sha=analysis.commit_sha,
+        file_count=analysis.file_count,
+        duration_ms=analysis.duration_ms,
+        error_message=analysis.error_message,
+        started_at=analysis.started_at,
+        completed_at=analysis.completed_at,
+    )
+
+
+# Keys the runner stores alongside the stack report but which the report
+# surfaces as their own fields.
+_STACK_SIDECAR_KEYS = frozenset({"notes", "counts", "failed_groups", "explanation_sources"})
+
+
+def _score_out(payload: dict[str, Any] | None) -> ScoreOut | None:
+    """Rebuild the score from what was persisted, tolerating an older shape."""
+    if not payload or "score" not in payload:
+        return None
+    categories = {
+        name: CategoryScoreOut(
+            score=int(entry.get("score", 100)),
+            issue_count=int(entry.get("issue_count", 0)),
+            severity_counts=dict(entry.get("severity_counts") or {}),
+            analysed=bool(entry.get("analysed", True)),
+        )
+        for name, entry in (payload.get("categories") or {}).items()
+    }
+    score = int(payload["score"])
+    total = int(payload.get("total_issues", 0))
+    return ScoreOut(
+        score=score,
+        total_issues=total,
+        severity_counts=dict(payload.get("severity_counts") or {}),
+        categories=categories,
+        is_floored=score == 0 and total > 0,
+    )
+
+
+def _report_issue(issue: Issue) -> ReportIssue:
+    return ReportIssue(
+        id=issue.id,
+        rule_id=issue.detected_by,
+        category=issue.category,
+        severity=issue.severity,
+        title=issue.title,
+        description=issue.description,
+        file_path=issue.file_path,
+        line_start=issue.line_start,
+        line_end=issue.line_end,
+        evidence=issue.evidence,
+        expected=issue.expected,
+        actual=issue.actual,
+        confidence=issue.confidence,
+        fingerprint=issue.fingerprint,
+        explanation=issue.explanation,
+        suggested_fix=issue.suggested_fix,
+        explanation_source=issue.explanation_source,
+        fix_before=issue.fix_before,
+        fix_after=issue.fix_after,
+    )

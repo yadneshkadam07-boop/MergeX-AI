@@ -66,9 +66,18 @@ class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # recognise the same issue across runs.
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    # --- Language-model output (optional by design) ------------------------
+    # --- Explanation layer (optional by design) ----------------------------
+    # Written by the synthesiser. `explanation_source` records whether the
+    # prose came from Gemini or from the rule's offline template, so the UI
+    # can say so and so a regression in model quality is visible.
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     suggested_fix: Mapped[str | None] = mapped_column(Text, nullable=True)
+    explanation_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # The concrete edit, kept as two columns rather than folded into
+    # `suggested_fix` so the UI can render a diff and offer a copy button
+    # without parsing prose.
+    fix_before: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fix_after: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     analysis: Mapped[Analysis] = relationship(back_populates="issues")
 

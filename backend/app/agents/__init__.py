@@ -1,6 +1,9 @@
 """LangGraph multi-agent orchestration.
 
-Phase 4: ``graph`` wires ``stack_agent`` -> {``api_contract_agent``,
-``schema_agent``, ``security_agent``} in parallel -> ``synthesizer_agent``.
-Agents coordinate deterministic engines; only the synthesizer calls Gemini.
+``graph`` wires stack detection into three rule groups that run in parallel,
+then joins them at the synthesiser. ``state`` is the shared state object and
+its reducers.
+
+Only the synthesiser touches a language model, and only to attach prose to
+findings that already exist. Every other node is deterministic.
 """
