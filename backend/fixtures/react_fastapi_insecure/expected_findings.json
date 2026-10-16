@@ -9,13 +9,29 @@
   "fixture": "react_fastapi_insecure",
   "description": "A React + FastAPI payments app with committed secrets, a wildcard CORS policy, unauthenticated money-moving routes, and dependencies pinned to versions with published advisories.",
   "stack": {
-    "frontend": ["React"],
-    "backend": ["FastAPI"],
-    "database": ["SQLAlchemy"],
-    "languages_include": ["TypeScript", "Python"],
-    "package_managers": ["npm", "pip"],
-    "frontend_roots": ["frontend"],
-    "backend_roots": ["backend"],
+    "frontend": [
+      "React"
+    ],
+    "backend": [
+      "FastAPI"
+    ],
+    "database": [
+      "SQLAlchemy"
+    ],
+    "languages_include": [
+      "TypeScript",
+      "Python"
+    ],
+    "package_managers": [
+      "npm",
+      "pip"
+    ],
+    "frontend_roots": [
+      "frontend"
+    ],
+    "backend_roots": [
+      "backend"
+    ],
     "is_monorepo": false
   },
   "findings": [
@@ -40,8 +56,14 @@
           "symbol": "JWT_SIGNING_KEY",
           "note": "Committed fallback default for a signing key."
         },
-        { "file_path": "backend/app/auth.py", "symbol": "ADMIN_PASSWORD" },
-        { "file_path": "backend/app/auth.py", "symbol": "DATABASE_PASSWORD" }
+        {
+          "file_path": "backend/app/auth.py",
+          "symbol": "ADMIN_PASSWORD"
+        },
+        {
+          "file_path": "backend/app/auth.py",
+          "symbol": "DATABASE_PASSWORD"
+        }
       ],
       "note": "High-entropy strings alone are not enough; the rule should combine a provider prefix (sk_live_, AKIA, SG., eyJ) with an entropy check to keep false positives down.",
       "implemented": false
@@ -102,11 +124,31 @@
       "severity": "high",
       "file_path": "backend/requirements.txt",
       "occurrences": [
-        { "package": "PyYAML", "version": "5.3.1", "advisory": "CVE-2020-14343" },
-        { "package": "requests", "version": "2.19.1", "advisory": "CVE-2023-32681" },
-        { "package": "GitPython", "version": "3.1.29", "advisory": "CVE-2024-22190" },
-        { "package": "jinja2", "version": "2.11.2", "advisory": "GHSA-h5c8-rqwp-cp95" },
-        { "package": "fastapi", "version": "0.65.1", "advisory": "CVE-2021-32677" }
+        {
+          "package": "PyYAML",
+          "version": "5.3.1",
+          "advisory": "CVE-2020-14343"
+        },
+        {
+          "package": "requests",
+          "version": "2.19.1",
+          "advisory": "CVE-2023-32681"
+        },
+        {
+          "package": "GitPython",
+          "version": "3.1.29",
+          "advisory": "CVE-2024-22190"
+        },
+        {
+          "package": "jinja2",
+          "version": "2.11.2",
+          "advisory": "GHSA-h5c8-rqwp-cp95"
+        },
+        {
+          "package": "fastapi",
+          "version": "0.65.1",
+          "advisory": "CVE-2021-32677"
+        }
       ],
       "note": "Resolved against OSV.dev. Advisory IDs are indicative; the assertion should be that the package/version pair returns at least one vulnerability, not that a specific CVE id is returned, since the database is updated continuously.",
       "implemented": false
@@ -120,11 +162,101 @@
     },
     {
       "reason": "These routes correctly declare an authentication dependency.",
-      "symbols": ["list_payments", "delete_payment"]
+      "symbols": [
+        "list_payments",
+        "delete_payment"
+      ]
     },
     {
       "reason": "sqlalchemy 2.0.31 has no advisory and must not appear in dependency findings.",
       "package": "sqlalchemy"
     }
-  ]
+  ],
+  "extraction": {
+    "$comment": [
+      "Ground truth for the Phase 2 extractors. Every entry carries the file",
+      "and line a finding's evidence must point at."
+    ],
+    "frontend_api_calls": [
+      {
+        "file_path": "frontend/src/api/payments.ts",
+        "line_start": 6,
+        "line_end": 8,
+        "method": "GET",
+        "path": "/api/payments",
+        "function": "listPayments",
+        "has_auth_header": true,
+        "base_url": "${API_BASE_URL}",
+        "note": "The interpolated base URL must not become a path segment."
+      },
+      {
+        "file_path": "frontend/src/api/payments.ts",
+        "line_start": 13,
+        "line_end": 17,
+        "method": "POST",
+        "path": "/api/payments/{}/refund",
+        "function": "refund",
+        "has_auth_header": true,
+        "request_fields": [
+          "amount_cents"
+        ],
+        "base_url": "${API_BASE_URL}",
+        "note": "axios 3-argument form: the auth header is in the third argument."
+      }
+    ],
+    "backend_routes": [
+      {
+        "file_path": "backend/app/routes.py",
+        "line_start": 8,
+        "method": "GET",
+        "path": "/api/payments",
+        "handler": "list_payments",
+        "mount_prefix": "/api",
+        "dependencies": [
+          "require_user"
+        ],
+        "is_authenticated": true
+      },
+      {
+        "file_path": "backend/app/routes.py",
+        "line_start": 15,
+        "method": "POST",
+        "path": "/api/payments/{}/refund",
+        "handler": "refund_payment",
+        "mount_prefix": "/api",
+        "dependencies": [],
+        "is_authenticated": false,
+        "rule_id": "MX-SEC-002",
+        "note": "Unauthenticated while every sibling route on this router is protected."
+      },
+      {
+        "file_path": "backend/app/routes.py",
+        "line_start": 22,
+        "method": "GET",
+        "path": "/api/customers/export",
+        "handler": "export_customers",
+        "mount_prefix": "/api",
+        "dependencies": [],
+        "is_authenticated": false,
+        "rule_id": "MX-SEC-002"
+      },
+      {
+        "file_path": "backend/app/routes.py",
+        "line_start": 27,
+        "method": "DELETE",
+        "path": "/api/payments/{}",
+        "handler": "delete_payment",
+        "mount_prefix": "/api",
+        "dependencies": [
+          "require_user"
+        ],
+        "is_authenticated": true
+      }
+    ],
+    "db_schema": {
+      "tables": []
+    },
+    "orm_models": [],
+    "sql_queries": []
+  }
 }

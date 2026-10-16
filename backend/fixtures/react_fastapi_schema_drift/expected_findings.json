@@ -7,13 +7,32 @@
   "fixture": "react_fastapi_schema_drift",
   "description": "SQLAlchemy models drifted from the SQL migrations that actually built the database. The ORM layer is internally consistent and the migrations are valid SQL; they simply disagree with each other.",
   "stack": {
-    "frontend": ["React"],
-    "backend": ["FastAPI"],
-    "database": ["Alembic", "PostgreSQL", "SQLAlchemy"],
-    "languages_include": ["TypeScript", "Python", "SQL"],
-    "package_managers": ["npm", "pip"],
-    "frontend_roots": ["frontend"],
-    "backend_roots": ["backend"],
+    "frontend": [
+      "React"
+    ],
+    "backend": [
+      "FastAPI"
+    ],
+    "database": [
+      "Alembic",
+      "PostgreSQL",
+      "SQLAlchemy"
+    ],
+    "languages_include": [
+      "TypeScript",
+      "Python",
+      "SQL"
+    ],
+    "package_managers": [
+      "npm",
+      "pip"
+    ],
+    "frontend_roots": [
+      "frontend"
+    ],
+    "backend_roots": [
+      "backend"
+    ],
     "is_monorepo": false
   },
   "findings": [
@@ -78,15 +97,282 @@
   "must_not_report": [
     {
       "reason": "suppliers matches its migration exactly and must produce no schema findings.",
-      "symbols": ["Supplier.name", "Supplier.contact_email"]
+      "symbols": [
+        "Supplier.name",
+        "Supplier.contact_email"
+      ]
     },
     {
       "reason": "These columns agree across model and migration.",
-      "symbols": ["Product.sku", "Product.name", "Product.reorder_level", "Product.description"]
+      "symbols": [
+        "Product.sku",
+        "Product.name",
+        "Product.reorder_level",
+        "Product.description"
+      ]
     },
     {
       "reason": "low_stock and list_products only touch columns that exist.",
-      "symbols": ["low_stock", "list_products"]
+      "symbols": [
+        "low_stock",
+        "list_products"
+      ]
     }
-  ]
+  ],
+  "extraction": {
+    "$comment": [
+      "Ground truth for the Phase 2 extractors. Every entry carries the file",
+      "and line a finding's evidence must point at."
+    ],
+    "frontend_api_calls": [
+      {
+        "file_path": "frontend/src/api/products.ts",
+        "line_start": 12,
+        "method": "GET",
+        "path": "/api/products",
+        "function": "listProducts"
+      },
+      {
+        "file_path": "frontend/src/api/products.ts",
+        "line_start": 17,
+        "method": "GET",
+        "path": "/api/products/low-stock",
+        "function": "getLowStock"
+      }
+    ],
+    "backend_routes": [],
+    "db_schema": {
+      "migration_files": [
+        "backend/migrations/0001_create_suppliers.sql",
+        "backend/migrations/0002_create_products.sql"
+      ],
+      "tables": [
+        {
+          "name": "suppliers",
+          "file_path": "backend/migrations/0001_create_suppliers.sql",
+          "columns": [
+            {
+              "name": "id",
+              "line": 3,
+              "type_family": "integer",
+              "is_primary_key": true
+            },
+            {
+              "name": "name",
+              "line": 4,
+              "type_family": "string",
+              "nullable": false
+            },
+            {
+              "name": "contact_email",
+              "line": 5,
+              "type_family": "string",
+              "nullable": true
+            }
+          ],
+          "indexes": [
+            {
+              "name": "idx_suppliers_name",
+              "columns": [
+                "name"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "products",
+          "file_path": "backend/migrations/0002_create_products.sql",
+          "columns": [
+            {
+              "name": "id",
+              "line": 9,
+              "type_family": "integer",
+              "is_primary_key": true
+            },
+            {
+              "name": "sku",
+              "line": 10,
+              "type_family": "string",
+              "is_unique": true,
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "line": 11,
+              "type_family": "string",
+              "nullable": false
+            },
+            {
+              "name": "unit_price",
+              "line": 12,
+              "type_family": "integer",
+              "nullable": false,
+              "rule_id": "MX-DB-002",
+              "note": "INTEGER here, Numeric(10,2) in the model."
+            },
+            {
+              "name": "reorder_level",
+              "line": 13,
+              "type_family": "integer",
+              "nullable": false
+            },
+            {
+              "name": "description",
+              "line": 14,
+              "type_family": "string",
+              "nullable": true
+            },
+            {
+              "name": "created_at",
+              "line": 15,
+              "type_family": "datetime"
+            },
+            {
+              "name": "supplier_id",
+              "line": 16,
+              "type_family": "integer",
+              "nullable": true,
+              "rule_id": "MX-DB-004",
+              "note": "No REFERENCES clause and no index, unlike the model's ForeignKey."
+            }
+          ],
+          "absent_columns": [
+            "warehouse_code",
+            "last_counted_at"
+          ],
+          "foreign_keys": [],
+          "indexes": []
+        }
+      ]
+    },
+    "orm_models": [
+      {
+        "class_name": "Supplier",
+        "table_name": "suppliers",
+        "file_path": "backend/app/models.py",
+        "line_start": 7,
+        "fields": [
+          {
+            "name": "id",
+            "line": 10,
+            "type_family": "integer",
+            "is_primary_key": true
+          },
+          {
+            "name": "name",
+            "line": 11,
+            "type_family": "string",
+            "nullable": false
+          },
+          {
+            "name": "contact_email",
+            "line": 12,
+            "type_family": "string",
+            "nullable": true
+          }
+        ]
+      },
+      {
+        "class_name": "Product",
+        "table_name": "products",
+        "file_path": "backend/app/models.py",
+        "line_start": 15,
+        "fields": [
+          {
+            "name": "id",
+            "line": 18,
+            "type_family": "integer",
+            "is_primary_key": true
+          },
+          {
+            "name": "sku",
+            "line": 19,
+            "type_family": "string",
+            "is_unique": true
+          },
+          {
+            "name": "name",
+            "line": 20,
+            "type_family": "string",
+            "nullable": false
+          },
+          {
+            "name": "warehouse_code",
+            "line": 25,
+            "type_family": "string",
+            "nullable": true,
+            "rule_id": "MX-DB-001",
+            "note": "Declared in the model, never created by a migration. Evidence must point at line 25."
+          },
+          {
+            "name": "unit_price",
+            "line": 29,
+            "type_family": "decimal",
+            "nullable": false,
+            "rule_id": "MX-DB-002"
+          },
+          {
+            "name": "reorder_level",
+            "line": 31,
+            "type_family": "integer"
+          },
+          {
+            "name": "description",
+            "line": 32,
+            "type_family": "string"
+          },
+          {
+            "name": "created_at",
+            "line": 33,
+            "type_family": "datetime"
+          },
+          {
+            "name": "supplier_id",
+            "line": 38,
+            "type_family": "integer",
+            "foreign_key": "suppliers.id",
+            "rule_id": "MX-DB-004"
+          }
+        ],
+        "relationships": [
+          {
+            "name": "supplier",
+            "line": 39,
+            "target_model": "Supplier"
+          }
+        ]
+      }
+    ],
+    "sql_queries": [
+      {
+        "file_path": "backend/app/queries.py",
+        "line_start": 26,
+        "line_end": 29,
+        "kind": "select",
+        "tables": [
+          "products"
+        ],
+        "columns": [
+          "id",
+          "sku",
+          "name",
+          "last_counted_at"
+        ],
+        "rule_id": "MX-DB-003",
+        "note": "last_counted_at exists in neither the model nor the schema."
+      },
+      {
+        "file_path": "backend/app/queries.py",
+        "line_start": 36,
+        "kind": "select",
+        "tables": [
+          "products"
+        ],
+        "columns": [
+          "supplier_id"
+        ],
+        "note": "Correct: supplier_id exists. Must not be reported."
+      }
+    ]
+  }
 }

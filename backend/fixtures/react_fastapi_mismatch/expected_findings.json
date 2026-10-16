@@ -9,13 +9,29 @@
   "fixture": "react_fastapi_mismatch",
   "description": "React + axios frontend against a FastAPI backend, with five cross-layer API contract defects. Every layer parses and type-checks on its own; only the seams are wrong.",
   "stack": {
-    "frontend": ["React"],
-    "backend": ["FastAPI"],
-    "database": ["SQLAlchemy"],
-    "languages_include": ["TypeScript", "Python"],
-    "package_managers": ["npm", "pip"],
-    "frontend_roots": ["frontend"],
-    "backend_roots": ["backend"],
+    "frontend": [
+      "React"
+    ],
+    "backend": [
+      "FastAPI"
+    ],
+    "database": [
+      "SQLAlchemy"
+    ],
+    "languages_include": [
+      "TypeScript",
+      "Python"
+    ],
+    "package_managers": [
+      "npm",
+      "pip"
+    ],
+    "frontend_roots": [
+      "frontend"
+    ],
+    "backend_roots": [
+      "backend"
+    ],
     "is_monorepo": false
   },
   "findings": [
@@ -80,11 +96,184 @@
   "must_not_report": [
     {
       "reason": "listUsers, listTasks and createTask are correct on both sides and must not produce findings.",
-      "symbols": ["listUsers", "listTasks", "createTask"]
+      "symbols": [
+        "listUsers",
+        "listTasks",
+        "createTask"
+      ]
     },
     {
       "reason": "CORS is restricted to the dev origin, not a wildcard.",
       "file_path": "backend/app/main.py"
     }
-  ]
+  ],
+  "extraction": {
+    "$comment": [
+      "Ground truth for the Phase 2 extractors. Every entry carries the file",
+      "and line a finding's evidence must point at. `rule_id` links an entry",
+      "to the finding it will produce in Phase 3; entries without one are",
+      "correct code that must still be extracted accurately."
+    ],
+    "frontend_api_calls": [
+      {
+        "file_path": "frontend/src/api/tasks.ts",
+        "line_start": 5,
+        "method": "GET",
+        "path": "/api/tasks",
+        "function": "listTasks",
+        "has_auth_header": false
+      },
+      {
+        "file_path": "frontend/src/api/tasks.ts",
+        "line_start": 10,
+        "method": "POST",
+        "path": "/api/tasks",
+        "function": "createTask",
+        "has_auth_header": false,
+        "request_fields": [
+          "title",
+          "owner_id"
+        ]
+      },
+      {
+        "file_path": "frontend/src/api/tasks.ts",
+        "line_start": 17,
+        "method": "DELETE",
+        "path": "/api/tasks/all",
+        "function": "deleteAllTasks",
+        "has_auth_header": false,
+        "rule_id": "MX-API-005"
+      },
+      {
+        "file_path": "frontend/src/api/users.ts",
+        "line_start": 7,
+        "method": "GET",
+        "path": "/api/user/{}",
+        "function": "getUser",
+        "has_auth_header": false,
+        "rule_id": "MX-API-002",
+        "note": "The seeded path typo: singular /user/. Must be extracted at this exact line."
+      },
+      {
+        "file_path": "frontend/src/api/users.ts",
+        "line_start": 12,
+        "method": "GET",
+        "path": "/api/users",
+        "function": "listUsers",
+        "has_auth_header": false
+      },
+      {
+        "file_path": "frontend/src/api/users.ts",
+        "line_start": 20,
+        "method": "POST",
+        "path": "/api/users",
+        "function": "createUser",
+        "has_auth_header": false,
+        "request_fields": [
+          "email",
+          "fullName"
+        ],
+        "rule_id": "MX-API-004"
+      },
+      {
+        "file_path": "frontend/src/api/users.ts",
+        "line_start": 27,
+        "method": "POST",
+        "path": "/api/users/{}/deactivate",
+        "function": "deactivateUser",
+        "has_auth_header": false,
+        "rule_id": "MX-API-003"
+      },
+      {
+        "file_path": "frontend/src/api/users.ts",
+        "line_start": 33,
+        "method": "GET",
+        "path": "/api/users/export",
+        "function": "exportUsers",
+        "has_auth_header": false,
+        "rule_id": "MX-API-001"
+      }
+    ],
+    "backend_routes": [
+      {
+        "file_path": "backend/app/main.py",
+        "line_start": 20,
+        "method": "GET",
+        "path": "/health",
+        "handler": "health",
+        "mount_prefix": ""
+      },
+      {
+        "file_path": "backend/app/routers/tasks.py",
+        "line_start": 11,
+        "method": "GET",
+        "path": "/api/tasks",
+        "handler": "list_tasks",
+        "mount_prefix": "/api",
+        "dependencies": []
+      },
+      {
+        "file_path": "backend/app/routers/tasks.py",
+        "line_start": 16,
+        "method": "POST",
+        "path": "/api/tasks",
+        "handler": "create_task",
+        "mount_prefix": "/api",
+        "request_model": "TaskCreate",
+        "dependencies": []
+      },
+      {
+        "file_path": "backend/app/routers/tasks.py",
+        "line_start": 31,
+        "method": "DELETE",
+        "path": "/api/tasks/all",
+        "handler": "delete_all_tasks",
+        "mount_prefix": "/api",
+        "dependencies": [
+          "require_admin"
+        ],
+        "is_authenticated": true
+      },
+      {
+        "file_path": "backend/app/routers/users.py",
+        "line_start": 12,
+        "method": "GET",
+        "path": "/api/users",
+        "handler": "list_users",
+        "mount_prefix": "/api"
+      },
+      {
+        "file_path": "backend/app/routers/users.py",
+        "line_start": 18,
+        "method": "GET",
+        "path": "/api/users/{}",
+        "handler": "get_user",
+        "mount_prefix": "/api",
+        "note": "The route the /api/user/{} call is a one-character typo away from."
+      },
+      {
+        "file_path": "backend/app/routers/users.py",
+        "line_start": 26,
+        "method": "POST",
+        "path": "/api/users",
+        "handler": "create_user",
+        "mount_prefix": "/api",
+        "request_model": "UserCreate"
+      },
+      {
+        "file_path": "backend/app/routers/users.py",
+        "line_start": 40,
+        "method": "DELETE",
+        "path": "/api/users/{}/deactivate",
+        "handler": "deactivate_user",
+        "mount_prefix": "/api",
+        "note": "DELETE here, POST on the frontend. The prefix /api is resolved from include_router in main.py."
+      }
+    ],
+    "db_schema": {
+      "tables": []
+    },
+    "orm_models": [],
+    "sql_queries": []
+  }
 }

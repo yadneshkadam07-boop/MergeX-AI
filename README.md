@@ -25,14 +25,15 @@ the seams do not line up.
 
 ## Status
 
-Phase 1 of 6 complete. You can import a repository today and get its detected stack back;
-the cross-layer checks land in Phases 2–4 and the dashboard in Phase 5.
+Phase 2 of 6 complete. Importing a repository works, and the facts every cross-layer
+check needs are now extracted with exact file and line locations. The rules that compare
+them land in Phase 3 and the dashboard in Phase 5.
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | 0 | Monorepo, container stack, tooling, CI, health endpoints | ✅ |
 | 1 | Schema + migrations, project/analysis API, repo importer, stack detector, seeded fixtures | ✅ |
-| 2 | Tree-sitter parsers and extractors | — |
+| 2 | Tree-sitter parsers and extractors | ✅ |
 | 3 | Contract diff, schema validation, security scanner | — |
 | 4 | LangGraph pipeline, Gemini, scoring, SSE | — |
 | 5 | Dashboard UI | — |

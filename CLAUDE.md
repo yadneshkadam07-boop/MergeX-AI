@@ -182,8 +182,8 @@ floor at 0. Per-category sub-scores are computed the same way over that category
 | --- | --- | --- |
 | 0 | Monorepo scaffold, docker-compose, lint/format/CI, health endpoint | **done** |
 | 1 | DB models, Alembic, project/analysis CRUD, repo importer, stack detector, seeded fixtures | **done** |
-| 2 | Tree-sitter parsers + extractors, unit tests against fixtures | next |
-| 3 | API-contract diff, schema validation, security scanner, seeded-bug fixtures | |
+| 2 | Tree-sitter parsers + extractors, asserted against all three fixtures | **done** |
+| 3 | API-contract diff, schema validation, security scanner | next |
 | 4 | LangGraph workflow, Gemini integration, synthesizer, scoring, SSE | |
 | 5 | Frontend pages wired to the API | |
 | 6 | Architecture graph, polish, README screenshots, deploy configs | |
@@ -235,8 +235,11 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
   relative to the config file.
 - **Tailwind v4 (CSS-first) with `@tailwindcss/vite`.** No `tailwind.config.js`: tokens are
   declared in `src/index.css` under `@theme inline`, which is what current shadcn/ui expects.
-- **Black is the formatter of record**, with `ruff-format --check` in pre-commit only to
-  catch disagreement between the two.
+- **Black is the formatter of record.** ~~`ruff-format --check` runs in pre-commit to catch
+  disagreement between the two.~~ *Reversed in Phase 2:* black and ruff-format are different
+  formatters and legitimately disagree on edge cases (notably annotated assignments with
+  long values). A hook that blocks commits whenever the non-authoritative formatter differs
+  is incoherent, so it was removed. Black alone formats; ruff alone lints.
 - **Frontend has no test runner yet.** Vitest + Testing Library arrive with Phase 5, when
   there are components whose behaviour is worth asserting.
 
@@ -298,6 +301,66 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
 - **The three fixtures are all React + FastAPI**, per the brief. That leaves generality
   unproven: a non-Python backend fixture (Express + Prisma) should be added in Phase 2 or 3
   so the extractors are not accidentally FastAPI-specific.
+### Phase 2
+
+- **`SourceLocation` carries the snippet, captured at extraction time.** The sandbox is
+  deleted when an analysis ends, so evidence looked up later would be looked up against
+  nothing. Every extracted item has `file_path` + a 1-based inclusive line range + the text;
+  `tests/test_extractors_fixtures.py` asserts this as an invariant over every extractor
+  rather than spot-checking.
+- **Locations are clamped to the file.** An off-by-one in a parser must not produce a line
+  number the file does not have, because that surfaces as a broken evidence snippet in the
+  UI rather than as an error anyone notices.
+- **`.ts` and `.tsx` are different Tree-sitter grammars, not a flag.** Parsing `.tsx` with
+  the TypeScript grammar mangles every JSX element; parsing `.ts` with the TSX grammar reads
+  `<T>x` as JSX. The mapping is by extension in `js_ts_parser._SUFFIX_DIALECTS`.
+- **Python uses `ast`, not Tree-sitter.** CPython's own parser is exact, carries
+  `end_lineno`, and cannot drift from the language. A syntax error is *returned* as
+  `SyntaxErrorInfo` rather than raised, so one broken file does not abort a repository.
+- **SQL column lines come from sqlglot's token stream.** Its expression tree carries no
+  positions. A column name is recognised by *shape* (identifier-like) rather than by token
+  type: sqlglot gives `name`, `key`, `order`, `type` and `value` dedicated token types, and
+  enumerating the accepted ones silently loses whichever was forgotten — `name` is among the
+  most common column names there is.
+- **Path parameter *names* are discarded** during normalisation: `/users/{id}`,
+  `/users/:id`, `/users/<int:user_id>` and `/users/${id}` all become `/users/{}`. A frontend
+  has no obligation to name a parameter the way the backend does, so comparing names would
+  produce constant false positives. Position and count are what must match.
+- **A numeric literal segment is treated as a parameter.** `/users/5` is the same endpoint
+  as `/users/{id}`. That is the conservative call: it prevents a false "missing endpoint".
+- **A leading `${...}` in a template is the origin, not a path segment.**
+  `` `${API_BASE_URL}/api/users` `` is how nearly every real frontend is written; reading
+  the interpolation as a segment normalises it to `/{}/api/users` and mismatches every route
+  on the server. A value that is *entirely* an interpolation is marked `is_opaque` instead
+  and never compared.
+- **FastAPI mount prefixes are resolved across files, through nested `include_router`
+  chains.** In the fixtures the routes say `/users` and `main.py` mounts them at `/api`.
+  Reporting the unmounted path would make every correct call look like a missing endpoint —
+  hundreds of false positives on a working application. A chain that cannot be followed to
+  an app sets `mount_prefix_incomplete` and drops confidence, so the rule engine knows not
+  to trust the path.
+- **`is_monorepo`-style guessing is avoided in route extraction too**: an unresolved mount
+  is recorded in `RouteExtraction.unresolved_mounts` rather than assumed to be root.
+- **Django reports `method=None`.** It declares paths in `urls.py` and methods in the view.
+  Guessing GET would invent method mismatches; "does this endpoint exist" still works
+  without the method and catches more.
+- **`db_schema` replays migrations in order** rather than reading the latest `CREATE TABLE`.
+  A column added in migration 5 and dropped in 9 does not exist.
+- **SQL and ORM types both reduce to the same canonical families** (`integer`, `decimal`,
+  `string`, …). `NUMERIC(10,2)` vs `INTEGER` is a mismatch; `VARCHAR(64)` vs `VARCHAR(200)`
+  is a length difference, which is a different and much weaker finding.
+- **`sqlglot`'s `NotNullColumnConstraint` is nullability, not its negation.** One node
+  serves both `NULL` and `NOT NULL`; `allow_null` is set for the former and absent for the
+  latter. Reading it as a negation marked every `NOT NULL` column nullable.
+- **`sql_queries` is a separate extractor** because an ORM prevents referring to a column
+  that does not exist and raw SQL does not. A string is SQL when its *shape* says so;
+  the executing callee only raises confidence.
+- **Blocking extraction runs in a thread** (`anyio.to_thread`), consistent with Phase 1.
+- **Timestamps have a Python-side default as well as a server default.** SQLite's
+  `CURRENT_TIMESTAMP` is whole seconds, so two rows created in the same second tie and
+  "newest first" falls back to comparing random UUIDs — a genuinely flaky ordering that a
+  Phase 1 test caught only intermittently. The Python default supplies microseconds on every
+  backend. No migration: neither default changes the DDL.
 - **mypy is not a pre-commit hook.** It needs the project's dependency set to resolve
   imports, and pre-commit cannot supply that reliably: `language: system` fails because the
   git hook does not put the venv on PATH (on Windows `python` becomes the Microsoft Store

@@ -37,11 +37,6 @@ repos:
         name: ruff (lint)
         args: [--fix, --exit-non-zero-on-fix]
         files: ^backend/
-      - id: ruff-format
-        name: ruff (import-safe format check)
-        files: ^backend/
-        # Black is the formatter of record; ruff-format only verifies agreement.
-        args: [--check]
 
   - repo: https://github.com/psf/black
     rev: 24.10.0

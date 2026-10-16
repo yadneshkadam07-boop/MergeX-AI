@@ -15,8 +15,10 @@ Two deliberate choices:
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 import sqlalchemy as sa
@@ -176,3 +178,23 @@ def fixture_repo() -> Callable[[str], Path]:
         return path
 
     return _resolve
+
+
+@pytest.fixture
+def fixture_manifest() -> Callable[[str], dict[str, Any]]:
+    """Load a fixture's ``expected_findings.json``.
+
+    The manifest is the contract: it states what the extractors must find,
+    where, and what they must *not* report. Tests assert against it rather
+     than against values copied into the test file, so the fixture and its
+    expectations cannot drift apart silently.
+    """
+
+    def _load(name: str) -> dict[str, Any]:
+        path = FIXTURES_DIR / name / "expected_findings.json"
+        if not path.is_file():
+            raise AssertionError(f"Manifest missing for fixture {name!r}: {path}")
+        loaded: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return loaded
+
+    return _load

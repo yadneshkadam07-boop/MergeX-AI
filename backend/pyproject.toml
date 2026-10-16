@@ -102,7 +102,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["ANN", "ARG", "S105", "S106", "S108"]
+# S608 (SQL built from a string) is expected in tests: several build SQL
+# *text* as extractor input. Nothing in the test suite executes SQL from
+# a formatted string.
+"tests/**" = ["ANN", "ARG", "S105", "S106", "S108", "S608"]
 # Fixture repos deliberately contain insecure code; they are analysis input.
 "fixtures/**" = ["ALL"]
 "app/models/__init__.py" = ["F401"]

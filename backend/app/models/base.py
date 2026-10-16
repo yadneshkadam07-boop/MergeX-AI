@@ -8,7 +8,7 @@ the database invented do not match what the metadata expects.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, TypeVar
 
@@ -73,17 +73,36 @@ class UUIDPrimaryKeyMixin:
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 class TimestampMixin:
-    """``created_at`` / ``updated_at``, maintained by the database."""
+    """``created_at`` / ``updated_at``.
+
+    Both a Python-side ``default`` and a database ``server_default`` are set,
+    deliberately. The server default guarantees a value for a row inserted by
+    a migration or by hand; the Python default supplies **microsecond**
+    precision, which the server default cannot be relied on for -- SQLite's
+    ``CURRENT_TIMESTAMP`` is whole seconds, so two rows created in the same
+    second tie, and "most recent first" then falls back to comparing random
+    UUIDs. Ordering has to be deterministic on every backend, not just the
+    one with the better clock.
+
+    Neither default appears in the DDL differently, so this needs no
+    migration.
+    """
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=_utc_now,
         server_default=func.now(),
         nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
+        default=_utc_now,
+        onupdate=_utc_now,
         server_default=func.now(),
-        onupdate=func.now(),
         nullable=False,
     )
