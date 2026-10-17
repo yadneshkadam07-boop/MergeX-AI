@@ -57,3 +57,6 @@ desktop.ini
 # ---- Tooling ----
 .cache/
 *.log
+
+# Screenshot harness scratch (servers, throwaway database, sandbox).
+.screenshots/

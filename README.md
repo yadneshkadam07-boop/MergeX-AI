@@ -25,11 +25,15 @@ the seams do not line up.
 
 ## Status
 
-Phase 4 of 6 complete. **The backend is feature-complete**: queue an analysis over the API,
-watch it stream its progress, and read a report with a health score, sub-scores, and every
-finding explained with a concrete before/after fix. 16 rules across four categories, all
-deterministic — no language model is involved in finding anything, and the finding set is
-provably identical with and without Gemini. The dashboard arrives in Phase 5.
+Phase 5 of 6 complete. **The product works end to end**: paste a GitHub URL or drop a ZIP,
+watch the analysis stream stage by stage, and read a dashboard with a health score,
+per-category sub-scores and every finding explained with a concrete before/after fix. 16
+rules across four categories, all deterministic — no language model is involved in finding
+anything, and the finding set is provably identical with and without Gemini. The
+architecture graph arrives in Phase 6.
+
+No repository to hand? **Load demo** analyses a bundled React + FastAPI project with seeded
+defects. No API key needed: every finding is explained offline from its rule's template.
 
 | Phase | Scope | State |
 | --- | --- | --- |
@@ -38,8 +42,8 @@ provably identical with and without Gemini. The dashboard arrives in Phase 5.
 | 2 | Tree-sitter parsers and extractors | ✅ |
 | 3 | Contract diff, schema validation, security scanner, scoring | ✅ |
 | 4 | LangGraph pipeline, Gemini explanations, SSE progress, report endpoint | ✅ |
-| 5 | Dashboard UI | — |
-| 6 | Architecture graph, deploy configs | — |
+| 5 | Dashboard UI, live progress, issue drawer, Vitest | ✅ |
+| 6 | Architecture graph, deploy configs | next |
 
 See [CLAUDE.md](CLAUDE.md) for the engineering conventions and the decision log.
 
@@ -236,9 +240,12 @@ pre-commit install
 ```
 
 Quality bar enforced in CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
-`ruff` + `black` + `mypy --strict` on the backend, ESLint + Prettier + `tsc` + production
-build on the frontend, both Docker images built, and **≥ 70% test coverage** on the analysis
-engine.
+`ruff` + `black` + `mypy --strict` + pytest on the backend, ESLint + Prettier + `tsc` +
+Vitest + production build on the frontend, both Docker images built, and **≥ 70% test
+coverage** on the analysis engine.
+
+Frontend tests run with Vitest and Testing Library (`npm run test` in `frontend/`), and
+cover the issue-table filters, the SSE hook including reconnection, and the score gauge.
 
 ---
 
@@ -312,12 +319,22 @@ MergeX treats every imported repository as hostile input.
 
 ## Screenshots
 
-*Added in Phase 6, once the dashboard exists.*
+Captured from the running stack — real imports, real analyses, no mock data. Regenerate
+with `npm run screenshots` from `frontend/`; see
+[docs/screenshots/README.md](docs/screenshots/README.md).
 
-<!--
-  | Landing | Live analysis | Dashboard | Architecture graph |
-  | --- | --- | --- | --- |
--->
+| Live analysis | Report |
+| --- | --- |
+| [![Live analysis](docs/screenshots/03-analysis-live.png)](docs/screenshots/03-analysis-live.png) | [![Dashboard](docs/screenshots/05-dashboard-dark.png)](docs/screenshots/05-dashboard-dark.png) |
+| Each stage reports as it finishes, with a count. Reconnects with `Last-Event-ID`. | Health score, per-category sub-scores, severity breakdown, filterable issues. |
+
+| Issue detail | Import |
+| --- | --- |
+| [![Issue drawer](docs/screenshots/07-issue-drawer.png)](docs/screenshots/07-issue-drawer.png) | [![Landing](docs/screenshots/01-landing-dark.png)](docs/screenshots/01-landing-dark.png) |
+| Evidence with the offending line highlighted, why it matters, and the exact edit. | GitHub URL, ZIP upload, or the bundled demo. |
+
+Light theme, the finished stepper, the coverage tab and the 390 px layout are all in
+[docs/screenshots/](docs/screenshots/).
 
 ---
 

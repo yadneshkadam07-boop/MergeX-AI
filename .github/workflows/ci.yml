@@ -78,6 +78,12 @@ jobs:
       - name: Prettier
         run: npm run format:check
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Vitest
+        run: npm run test
+
       - name: Build
         run: npm run build
 

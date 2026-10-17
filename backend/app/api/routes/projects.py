@@ -28,6 +28,7 @@ from app.schemas.project import (
     ProjectRead,
     ProjectUpdate,
 )
+from app.services.demo import DEMO_FIXTURE, DemoUnavailableError, pack_demo_archive
 from app.services.github import InvalidGitHubUrlError
 from app.services.project_service import (
     ImportOutcome,
@@ -137,6 +138,53 @@ async def create_project_from_zip(
         await to_thread.run_sync(partial(archive_path.unlink, missing_ok=True))
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
+    return ProjectCreateResponse(
+        project=ProjectRead.model_validate(outcome.project),
+        import_summary=_summarise(outcome),
+    )
+
+
+@router.post(
+    "/demo",
+    response_model=ProjectCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Import the bundled demo project",
+    responses=_IMPORT_RESPONSES,
+)
+async def create_demo_project(
+    session: SessionDep,
+    importer: ImporterDep,
+) -> ProjectCreateResponse:
+    """Import the seeded fixture, so the product can be demonstrated with no
+    repository to hand.
+
+    The fixture is packed into a ZIP and handed to the ordinary upload path,
+    so this exercises the same import code a real upload does rather than
+    introducing a second one. There is no user input to validate: the source
+    is a directory inside the image.
+    """
+    project_id = uuid.uuid4()
+    archive_path = importer.upload_destination(project_id)
+
+    try:
+        await to_thread.run_sync(partial(pack_demo_archive, archive_path))
+    except DemoUnavailableError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+    try:
+        outcome = await build_zip_project(
+            session,
+            importer,
+            project_id=project_id,
+            archive_path=archive_path,
+            filename=f"{DEMO_FIXTURE}.zip",
+            name="Demo — React + FastAPI (seeded bugs)",
+        )
+    except RepoImportError as exc:  # pragma: no cover - the fixture is valid
+        await to_thread.run_sync(partial(archive_path.unlink, missing_ok=True))
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+    log.info("demo_project_created", project_id=str(project_id))
     return ProjectCreateResponse(
         project=ProjectRead.model_validate(outcome.project),
         import_summary=_summarise(outcome),

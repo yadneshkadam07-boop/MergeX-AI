@@ -89,8 +89,9 @@ typecheck: ## Type-check backend (mypy) and frontend (tsc)
 	npm --prefix frontend run typecheck
 
 .PHONY: test
-test: ## Run backend tests with coverage
+test: ## Run backend and frontend tests
 	cd backend && ../$(PY) -m pytest --cov=app --cov-report=term-missing
+	npm --prefix frontend run test
 
 .PHONY: build
 build: ## Production build of the frontend

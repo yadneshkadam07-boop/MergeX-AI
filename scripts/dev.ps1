@@ -214,6 +214,8 @@ switch ($Task) {
     'test' {
         Write-Step 'pytest'
         Invoke-Py @('-m', 'pytest', '--cov=app', '--cov-report=term-missing')
+        Write-Step 'vitest'
+        Invoke-Npm @('run', 'test')
     }
 
     'build' {

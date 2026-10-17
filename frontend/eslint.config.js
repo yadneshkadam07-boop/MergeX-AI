@@ -46,6 +46,16 @@ export default tseslint.config(
     },
   },
 
+  // Test setup polyfills browser prototypes that jsdom lacks, which means
+  // reading methods off a prototype to check whether they exist. That is
+  // what the file is for, so the rule about unbound methods does not apply.
+  {
+    files: ["src/test/**/*.ts", "**/*.test.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/unbound-method": "off",
+    },
+  },
+
   // Plain JS config files are outside the TS projects.
   {
     files: ["**/*.js"],

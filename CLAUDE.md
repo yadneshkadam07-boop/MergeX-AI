@@ -185,8 +185,8 @@ floor at 0. Per-category sub-scores are computed the same way over that category
 | 2 | Tree-sitter parsers + extractors, asserted against all three fixtures | **done** |
 | 3 | Rule engines (16 rules), OSV lookup, dedupe, scoring | **done** |
 | 4 | LangGraph workflow, Gemini explanations, SSE streaming | **done** |
-| 5 | Frontend pages wired to the API | next |
-| 6 | Architecture graph, polish, README screenshots, deploy configs | |
+| 5 | Frontend pages wired to the API | **done** |
+| 6 | Architecture graph, polish, README screenshots, deploy configs | next |
 
 Explicitly **out of scope** for now (stub only): documentation generation, deployment
 readiness check, PR comment bot, VS Code extension.
@@ -489,6 +489,46 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
   template/model split). An LLM feature with no cost visibility is one nobody can run in
   production.
 
+### Phase 5
+
+- **The frontend has no fixtures of its own.** Every page reads `/report` and `/events`;
+  there is no mock mode and no sample report in the bundle. The cost is that the UI cannot
+  be opened without a backend, which is the right trade: a dashboard that renders convincing
+  invented data is how you ship a dashboard that does not work.
+- **`POST /projects/demo` packs the bundled fixture and hands it to the normal upload path.**
+  The browser cannot zip a directory inside the backend image, and committing a second copy
+  of the fixture as a binary would let the demo drift from what the tests assert. Packing at
+  request time means the demo exercises the same import code a real upload does, and editing
+  the fixture changes the demo.
+- **Live progress and the finished report are separate routes.** `/analyses/:id` streams,
+  `/analyses/:id/report` reads. One page that changes shape would make a report impossible
+  to link to or reload without re-entering a "watching" state.
+- **`Last-Event-ID` is sent as a query parameter.** `EventSource` cannot set headers, which
+  is why the backend accepts both. The hook also closes and reopens the stream itself rather
+  than letting `EventSource` auto-reconnect: the browser reconnects to the *original* URL, so
+  a run that progressed while the tab was offline would replay from the start and the stepper
+  would jump backwards.
+- **`useAnalysisStream` keeps its factory and backoff schedule in refs.** They were in the
+  effect's dependency list, so a caller passing inline options re-created the connection on
+  every render. Caught by a test that expected one `EventSource` and found two.
+- **Connection state and analysis state are separate.** A dropped stream shows "reconnecting",
+  never "analysis failed": the run continues on the server, and claiming otherwise because a
+  laptop slept would be a lie about the backend.
+- **A table row is not a button.** Giving `<tr role="button">` strips the table semantics a
+  screen reader needs; rows get `tabIndex` and a key handler instead and stay rows.
+- **Only known stack keys become badges.** The stored stack report also carries `signals`, a
+  list of objects, and `languages`, a map. Flat-mapping every array into React children threw
+  and blanked the whole report page — found by the screenshot harness, fixed, and pinned by
+  `stackBadgesFrom` tests.
+- **Three distinguishable "nothing here" states.** Scored-and-clean, not-applicable (nothing
+  of that kind in the project) and failed (the group crashed) are rendered differently
+  everywhere they appear. Collapsing them is the easiest way for a dashboard to mislead.
+- **Screenshots are captured from the real stack** (`frontend/scripts/screenshots.mjs`): a
+  throwaway SQLite database, the production build, and real imports. The live-progress shots
+  use a real GitHub repository because the bundled fixture finishes in under a second and
+  cannot be photographed mid-run; the dashboard shots use the fixture because its findings
+  are fixed and the picture is reproducible.
+
 - **mypy is not a pre-commit hook.** It needs the project's dependency set to resolve
   imports, and pre-commit cannot supply that reliably: `language: system` fails because the
   git hook does not put the venv on PATH (on Windows `python` becomes the Microsoft Store
@@ -542,3 +582,15 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
 - A node replaced with `monkeypatch.setattr(graph_module, "api_contract_node", ...)` loses
   its `_guard` wrapper, because the decorator is applied at definition time. To test crash
   isolation, make the *rule engine* raise instead.
+- The shadcn CLI writes to a literal `@/` directory because there is no `baseUrl` in
+  `tsconfig` (a Phase 0 decision). Generate, then move the files into `src/components/ui/`.
+  It also wires imports to a standalone `cn` package; repoint them at `@/lib/utils` so there
+  is one `cn`.
+- `CardHeader` is a grid, not a flex row. A trailing element only moves to the right when it
+  is a `CardAction`; `className="flex-row justify-between"` on the header is ignored.
+- lucide-react v1 has no brand icons — there is no `Github`. Use `FolderGit2`.
+- Node 26 refuses to `spawn` a `.cmd` shim without a shell. Run the tool's `.js` entry with
+  `process.execPath` instead of `npx`.
+- Radix hides the rest of the page from the accessibility tree while a `Sheet` is open, so a
+  `getByRole` query made before the dialog detaches finds nothing. Wait for
+  `{ state: "detached" }`, not for the key press.
