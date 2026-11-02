@@ -1,0 +1,133 @@
+# render.yaml — MergeX AI backend deployment
+#
+# Render Blueprint: https://render.com/docs/infrastructure-as-code
+#
+# How to use:
+#   1. Push this file to your repository root.
+#   2. In Render Dashboard → New → Blueprint → connect this repo.
+#   3. Render will create the service and prompt you to fill in the
+#      secret env vars that are marked `sync: false` below.
+#
+# Single instance by design: the in-process event bus and demo-cleanup loop
+# are not safe across replicas. Scale with a Redis-backed bus before adding
+# a second instance (see CLAUDE.md > Architecture decisions).
+
+services:
+  - type: web
+    name: mergex-backend
+    runtime: docker
+    # Build the `prod` target from backend/Dockerfile.
+    # The Dockerfile installs git and curl in the base layer, so both are
+    # available in the production image without any extra build step.
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerBuildTarget: prod
+
+    # Run `alembic upgrade head` before traffic switches to the new container.
+    # Must run against the *direct* connection (port 5432), not the pooler.
+    preDeployCommand: "cd /app && alembic upgrade head"
+
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+
+    # One instance only — see note above.
+    numInstances: 1
+
+    plan: starter
+
+    region: oregon   # change to match your Supabase region
+
+    healthCheckPath: /health
+
+    envVars:
+      # ---------- Application -------------------------------------------------
+      - key: APP_ENV
+        value: production
+
+      - key: LOG_LEVEL
+        value: INFO
+
+      - key: API_V1_PREFIX
+        value: /api/v1
+
+      # Set to your Vercel deployment URL: https://your-app.vercel.app
+      # No trailing slash. Comma-separate multiple origins if needed.
+      - key: CORS_ORIGINS
+        sync: false
+
+      # ---------- Database ----------------------------------------------------
+      # Direct connection (port 5432).
+      # Supabase → Connect → "Direct connection" string.
+      - key: DATABASE_URL
+        sync: false
+
+      - key: DB_DISABLE_PREPARED_STATEMENTS
+        value: "false"
+
+      - key: DB_POOL_SIZE
+        value: "5"
+
+      - key: DB_MAX_OVERFLOW
+        value: "10"
+
+      # ---------- AI / Gemini -------------------------------------------------
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+
+      - key: GEMINI_TIMEOUT_SECONDS
+        value: "60"
+
+      - key: GEMINI_MAX_RETRIES
+        value: "3"
+
+      # ---------- GitHub ------------------------------------------------------
+      - key: GITHUB_TOKEN
+        sync: false
+
+      # ---------- Sandbox / workspace ----------------------------------------
+      # /workspace is created by the Dockerfile and owned by the mergex user.
+      - key: WORKSPACE_DIR
+        value: /workspace
+
+      - key: MAX_REPO_SIZE_MB
+        value: "100"
+
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "100"
+
+      - key: MAX_FILE_COUNT
+        value: "20000"
+
+      - key: ANALYSIS_TIMEOUT_SECONDS
+        value: "600"
+
+      - key: CLONE_TIMEOUT_SECONDS
+        value: "120"
+
+      # ---------- Rate limiting -----------------------------------------------
+      # Trust X-Forwarded-For: Render's proxy overwrites it.
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
+
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "60"
+
+      - key: DEMO_RATE_LIMIT_PER_HOUR
+        value: "5"
+
+      - key: DEMO_RATE_LIMIT_PER_MINUTE
+        value: "5"
+
+      - key: DEMO_BURST_LIMIT
+        value: "2"
+
+      - key: DEMO_BURST_WINDOW_MINUTES
+        value: "10"
+
+      - key: DEMO_RETENTION_HOURS
+        value: "24"
+
+      - key: DEMO_CLEANUP_INTERVAL_MINUTES
+        value: "60"

@@ -16,6 +16,12 @@ export default defineConfig({
     strictPort: true,
     // Required so the dev server is reachable when run inside a container.
     host: true,
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: 4173,

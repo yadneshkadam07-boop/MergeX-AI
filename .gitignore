@@ -60,3 +60,12 @@ desktop.ini
 
 # Screenshot harness scratch (servers, throwaway database, sandbox).
 .screenshots/
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Accidental nested directory backups
+/MergeX AI/
+/MergeX AI - Copy/

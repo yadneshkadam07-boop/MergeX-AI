@@ -26,10 +26,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import DEFAULT_USER_ID
 from app.core.config import Settings, get_settings
 from app.core.database import build_session_factory, create_engine
 from app.main import create_app
 from app.models import Base
+from app.models.user import User
 from app.services.git_client import GitResult
 
 SettingsFactory = Callable[..., Settings]
@@ -50,6 +52,7 @@ def settings_factory(tmp_path: Path) -> SettingsFactory:
             "gemini_api_key": None,
             "github_token": None,
             "rate_limit_per_minute": 10_000,
+            "allow_anonymous_user": True,
         }
         defaults.update(overrides)
         return Settings(**defaults)  # type: ignore[arg-type]
@@ -73,6 +76,16 @@ def db_schema(settings: Settings) -> None:
     engine = sa.create_engine(sync_url)
     try:
         Base.metadata.create_all(engine)
+        with engine.connect() as conn:
+            conn.execute(
+                sa.insert(User).values(
+                    id=DEFAULT_USER_ID,
+                    email="developer@mergex.ai",
+                    password_hash="$2b$12$b.we3xq6ykEWvSq5rz2cpu.P/JfIxC5Gm7xfSynZUrr98sdqwKnCe",
+                    display_name="Alex Vance",
+                )
+            )
+            conn.commit()
     finally:
         engine.dispose()
 

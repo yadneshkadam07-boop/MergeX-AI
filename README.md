@@ -25,12 +25,12 @@ the seams do not line up.
 
 ## Status
 
-Phase 5 of 6 complete. **The product works end to end**: paste a GitHub URL or drop a ZIP,
-watch the analysis stream stage by stage, and read a dashboard with a health score,
-per-category sub-scores and every finding explained with a concrete before/after fix. 16
-rules across four categories, all deterministic — no language model is involved in finding
-anything, and the finding set is provably identical with and without Gemini. The
-architecture graph arrives in Phase 6.
+**All 6 phases complete.** **The product works end to end**: paste a GitHub URL or drop a ZIP,
+watch the analysis stream stage by stage, explore the interactive React Flow architecture
+graph, inspect the deployment readiness checklist, and view a unified dashboard with a
+health score, per-category sub-scores, and every finding explained with a concrete before/after fix.
+16 rules across four categories, all deterministic — no language model is involved in finding
+anything, and the finding set is provably identical with and without Gemini.
 
 No repository to hand? **Load demo** analyses a bundled React + FastAPI project with seeded
 defects. No API key needed: every finding is explained offline from its rule's template.
@@ -43,7 +43,7 @@ defects. No API key needed: every finding is explained offline from its rule's t
 | 3 | Contract diff, schema validation, security scanner, scoring | ✅ |
 | 4 | LangGraph pipeline, Gemini explanations, SSE progress, report endpoint | ✅ |
 | 5 | Dashboard UI, live progress, issue drawer, Vitest | ✅ |
-| 6 | Architecture graph, deploy configs | next |
+| 6 | Architecture graph, deploy configs, auth, project hub | ✅ |
 
 See [CLAUDE.md](CLAUDE.md) for the engineering conventions and the decision log.
 

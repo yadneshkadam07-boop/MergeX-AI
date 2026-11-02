@@ -24,6 +24,10 @@ dependencies = [
   "asyncpg>=0.30,<0.31",
   "greenlet>=3.1",                 # required by SQLAlchemy's asyncio bridge
 
+  # --- Authentication & Security ---
+  "bcrypt>=4.2",
+  "pyjwt>=2.9",
+
   # --- Observability ---
   "structlog>=24.4,<26.0",
 
@@ -92,6 +96,8 @@ ignore = [
   "ANN401",    # allow typing.Any where genuinely dynamic
   "B008",      # FastAPI Depends()/File() in defaults is the documented idiom
   "S101",      # assert is fine (tests, internal invariants)
+  "S105",      # bandit false positives on config parameter names with 'secret' or 'key'
+  "S106",      # bandit false positives on standard oauth 'token_type' or password hashes
   # ASYNC109 wants callers to wrap with `asyncio.timeout` instead of taking a
   # `timeout` argument. That is wrong for the git runner: the timeout has to
   # be *inside* the function that owns the subprocess, because on expiry it
@@ -105,11 +111,13 @@ ignore = [
 # S608 (SQL built from a string) is expected in tests: several build SQL
 # *text* as extractor input. Nothing in the test suite executes SQL from
 # a formatted string.
-"tests/**" = ["ANN", "ARG", "S105", "S106", "S108", "S608"]
+"tests/**" = ["ANN", "ARG", "S105", "S106", "S108", "S608", "E501"]
 # Fixture repos deliberately contain insecure code; they are analysis input.
 "fixtures/**" = ["ALL"]
+"alembic/versions/**" = ["ALL"]
 "app/models/__init__.py" = ["F401"]
 "app/api/routes/__init__.py" = ["F401"]
+"app/schemas/**" = ["N815"]
 # Starlette fixes the exception-handler signature at `(request, exc)`; a
 # handler that needs only one of them still has to accept both.
 "app/main.py" = ["ARG001"]

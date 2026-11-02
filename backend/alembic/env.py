@@ -31,10 +31,14 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# A URL already present in the config wins: that is how the test suite and
-# `alembic -x url=...` point a run at a throwaway database. Otherwise the
-# application's own settings decide, so `alembic upgrade head` and the running
-# service can never disagree about which database they mean.
+# A URL already present in the config or passed via `-x url=...` wins: that
+# is how the test suite and CLI point a run at a throwaway database. Otherwise
+# the application's own settings decide, so `alembic upgrade head` and the
+# running service can never disagree about which database they mean.
+x_args = context.get_x_argument(as_dictionary=True)
+if x_args.get("url"):
+    config.set_main_option("sqlalchemy.url", x_args["url"])
+
 if config.get_main_option("sqlalchemy.url", None):
     _connect_args: dict[str, object] = {}
 else:

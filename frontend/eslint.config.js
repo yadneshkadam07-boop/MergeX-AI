@@ -56,6 +56,14 @@ export default tseslint.config(
     },
   },
 
+  // CLI scripts (e.g. contrast checker) use console.log to report results.
+  {
+    files: ["scripts/**/*.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
+
   // Plain JS config files are outside the TS projects.
   {
     files: ["**/*.js"],

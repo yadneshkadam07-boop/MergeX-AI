@@ -99,6 +99,9 @@ async def stream_upload_to_disk(upload: ChunkedUpload, destination: Path, max_by
     return written
 
 
+DEFAULT_USER_ID = uuid.UUID("00000000-0000-4000-a000-000000000001")
+
+
 async def build_github_project(
     session: AsyncSession,
     settings: Settings,
@@ -107,6 +110,7 @@ async def build_github_project(
     source_url: str,
     source_ref: str | None = None,
     name: str | None = None,
+    user_id: uuid.UUID | None = None,
 ) -> ImportOutcome:
     """Clone a repository, detect its stack, and add the project to ``session``.
 
@@ -119,6 +123,7 @@ async def build_github_project(
 
     project = Project(
         id=uuid.uuid4(),
+        user_id=user_id or DEFAULT_USER_ID,
         name=name or repo.default_project_name,
         source_type=SourceType.GITHUB,
         source_url=repo.canonical_url,
@@ -152,6 +157,8 @@ async def build_zip_project(
     archive_path: Path,
     filename: str,
     name: str | None = None,
+    is_demo: bool = False,
+    user_id: uuid.UUID | None = None,
 ) -> ImportOutcome:
     """Extract a retained archive, detect its stack, and add the project.
 
@@ -164,11 +171,15 @@ async def build_zip_project(
     """
     project = Project(
         id=project_id,
+        user_id=user_id or DEFAULT_USER_ID,
         name=name or _name_from_filename(filename),
         source_type=SourceType.ZIP,
         source_url=None,
         upload_path=str(archive_path),
         upload_filename=filename,
+        # Demo projects are deleted on a retention schedule; see
+        # app/services/demo_cleanup.py.
+        is_demo=is_demo,
     )
 
     async with importer.import_zip(archive_path) as result:

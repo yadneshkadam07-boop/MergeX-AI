@@ -2,17 +2,34 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    false as sa_false,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, JSONType, TimestampMixin, UUIDPrimaryKeyMixin, enum_column
 from app.models.enums import SourceType
 
 if TYPE_CHECKING:
+    import uuid
+
     from app.models.analysis import Analysis
+    from app.models.user import User
+
+
+DEFAULT_USER_ID = uuid.UUID("00000000-0000-4000-a000-000000000001")
 
 
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -27,6 +44,13 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "projects"
 
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        default=DEFAULT_USER_ID,
+        server_default=str(DEFAULT_USER_ID),
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
 
     source_type: Mapped[SourceType] = mapped_column(
@@ -40,6 +64,14 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Set for SourceType.ZIP: path to the retained archive inside the workspace.
     upload_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     upload_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Created by the unauthenticated demo endpoint, and therefore disposable:
+    # a background task deletes these on a retention schedule. A column rather
+    # than a name convention, because deletion must not depend on a string a
+    # user could set.
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_false(), default=False
+    )
 
     # Facts from the most recent import. NULL until the first successful one.
     detected_stack: Mapped[dict[str, Any] | None] = mapped_column(JSONType, nullable=True)
@@ -60,6 +92,7 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         passive_deletes=True,
         order_by="desc(Analysis.created_at)",
     )
+    user: Mapped[User] = relationship("User", back_populates="projects")
 
     __table_args__ = (
         # A GitHub project must carry a URL; an uploaded one must not. This is
@@ -70,6 +103,8 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="source_matches_type",
         ),
         Index("ix_projects_created_at", "created_at"),
+        # Read only by the demo cleanup task, which filters on this column.
+        Index("ix_projects_is_demo", "is_demo"),
     )
 
     @property

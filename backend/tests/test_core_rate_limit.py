@@ -12,7 +12,7 @@ import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
-from app.core.rate_limit import RateLimitMiddleware
+from app.core.rate_limit import FixedWindowLimiter, RateLimitMiddleware
 
 
 class FakeClock:
@@ -198,26 +198,38 @@ class TestConstruction:
 
 
 class TestMemoryBounds:
+    """Asserted on the limiter, which is where the window table lives."""
+
     def test_expired_windows_are_pruned(self) -> None:
         clock = FakeClock()
-        middleware = RateLimitMiddleware(FastAPI(), limit=5, clock=clock)
+        limiter = FixedWindowLimiter(limit=5, window_seconds=60.0, clock=clock)
 
         for index in range(100):
-            middleware._hit(f"client-{index}")
-        assert len(middleware._windows) == 100
+            limiter.hit(f"client-{index}")
+        assert len(limiter._windows) == 100
 
         clock.advance(61.0)
-        middleware._prune(clock())
+        limiter._prune(clock())
 
-        assert middleware._windows == {}
+        assert limiter._windows == {}
 
     def test_live_windows_are_cleared_only_as_a_last_resort(self) -> None:
         clock = FakeClock()
-        middleware = RateLimitMiddleware(FastAPI(), limit=5, clock=clock)
+        limiter = FixedWindowLimiter(limit=5, window_seconds=60.0, clock=clock)
 
-        middleware._hit("a")
-        middleware._hit("b")
+        limiter.hit("a")
+        limiter.hit("b")
         # Nothing has expired, so pruning falls back to dropping the table.
-        middleware._prune(clock())
+        limiter._prune(clock())
 
-        assert middleware._windows == {}
+        assert limiter._windows == {}
+
+    def test_the_table_is_capped(self) -> None:
+        """A flood of unique addresses must not grow the map without limit."""
+        clock = FakeClock()
+        limiter = FixedWindowLimiter(limit=5, window_seconds=60.0, max_tracked_keys=10, clock=clock)
+
+        for index in range(25):
+            limiter.hit(f"client-{index}")
+
+        assert len(limiter._windows) <= 10

@@ -9,7 +9,7 @@ from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, UniqueC
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, enum_column
-from app.models.enums import IssueCategory, Severity
+from app.models.enums import IssueCategory, IssueStatus, Severity
 
 if TYPE_CHECKING:
     from app.models.analysis import Analysis
@@ -39,6 +39,12 @@ class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     severity: Mapped[Severity] = mapped_column(
         enum_column(Severity, "issue_severity"),
         nullable=False,
+    )
+    status: Mapped[IssueStatus] = mapped_column(
+        enum_column(IssueStatus, "issue_status"),
+        nullable=False,
+        default=IssueStatus.OPEN,
+        server_default=IssueStatus.OPEN.value,
     )
 
     title: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -95,6 +101,8 @@ class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_issues_analysis_id_severity", "analysis_id", "severity"),
         Index("ix_issues_analysis_id_category", "analysis_id", "category"),
+        Index("ix_issues_analysis_id_status", "analysis_id", "status"),
+        Index("ix_issues_status", "status"),
     )
 
     @property

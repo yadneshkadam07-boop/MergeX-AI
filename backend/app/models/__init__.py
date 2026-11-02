@@ -18,6 +18,8 @@ from app.models.enums import (
 )
 from app.models.issue import Issue
 from app.models.project import Project
+from app.models.settings import UserSettingsModel
+from app.models.user import User
 
 __all__ = [
     "AnalysisStage",
@@ -29,4 +31,6 @@ __all__ = [
     "Project",
     "Severity",
     "SourceType",
+    "User",
+    "UserSettingsModel",
 ]

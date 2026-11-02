@@ -77,7 +77,14 @@ class TestSandboxLimits:
 
 
 def test_production_flag() -> None:
-    assert _settings(app_env="production").is_production is True
+    prod = _settings(
+        app_env="production",
+        # Provide a valid production DB URL so the startup check passes.
+        database_url="postgresql+asyncpg://user:pass@db.supabase.co:5432/postgres",
+        cors_origins=["https://app.vercel.app"],
+        jwt_secret="prod-secret-must-be-at-least-32-chars-long-random-key",
+    )
+    assert prod.is_production is True
     assert _settings(app_env="local").is_production is False
 
 

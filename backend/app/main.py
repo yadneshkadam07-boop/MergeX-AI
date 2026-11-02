@@ -5,6 +5,8 @@ Run with: ``uvicorn app.main:app --reload``
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -24,7 +26,8 @@ from app.api.routes.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.database import build_session_factory, create_engine
 from app.core.logging import configure_logging, get_logger
-from app.core.rate_limit import RateLimitMiddleware
+from app.core.rate_limit import FixedWindowLimiter, RateLimitMiddleware
+from app.services.demo_cleanup import run_demo_cleanup_loop
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -68,9 +71,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ai_explanations=settings.ai_explanations_enabled,
     )
 
+    if settings.is_production and not settings.ai_explanations_enabled:
+        log.warning(
+            "gemini_api_key_missing",
+            detail=(
+                "GEMINI_API_KEY is not set. Analysis will run without AI explanations; "
+                "findings will be reported with template text only. "
+                "Set GEMINI_API_KEY in the Render environment to enable explanations."
+            ),
+        )
+
+    # Demo projects are created by an unauthenticated endpoint, so something
+    # has to delete them. The loop lives in the API process because the
+    # deployment target is a single instance; see app/services/demo_cleanup.py.
+    stop_cleanup = asyncio.Event()
+    cleanup_task = asyncio.create_task(
+        run_demo_cleanup_loop(app.state.session_factory, settings, stop=stop_cleanup),
+        name="demo-cleanup",
+    )
+    app.state.demo_cleanup_task = cleanup_task
+
     try:
         yield
     finally:
+        stop_cleanup.set()
+        cleanup_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await cleanup_task
         # Return pooled connections before the process exits; without this,
         # Postgres is left holding them until its own timeout.
         await engine.dispose()
@@ -96,6 +123,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/openapi.json",
     )
     app.state.settings = settings
+    # Per-app, not a module global: the tests build several apps with
+    # different settings, and a shared window table would leak between them.
+    app.state.demo_limiter = FixedWindowLimiter(
+        limit=settings.demo_rate_limit_per_hour, window_seconds=3600.0
+    )
+    # Strict per-minute cap: the primary abuse barrier.
+    app.state.demo_minute_limiter = FixedWindowLimiter(
+        limit=settings.demo_rate_limit_per_minute, window_seconds=60.0
+    )
+    # Burst guard: prevents draining the hourly budget in a rapid loop.
+    app.state.demo_burst_limiter = FixedWindowLimiter(
+        limit=settings.demo_burst_limit,
+        window_seconds=float(settings.demo_burst_window_minutes * 60),
+    )
+    # Auth rate limiter: protects register and token endpoints from brute force.
+    app.state.auth_limiter = FixedWindowLimiter(
+        limit=settings.auth_rate_limit_per_minute, window_seconds=60.0
+    )
 
     _register_middleware(app, settings)
     _register_exception_handlers(app)
@@ -104,6 +149,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # the API version prefix.
     app.include_router(health_router)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
+    if settings.api_v1_prefix != "/api":
+        app.include_router(api_router, prefix="/api", include_in_schema=False)
 
     return app
 
@@ -122,7 +169,7 @@ def _register_middleware(app: FastAPI, settings: Settings) -> None:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
         expose_headers=[REQUEST_ID_HEADER],
     )
@@ -215,12 +262,26 @@ def _register_exception_handlers(app: FastAPI) -> None:
         )
 
 
+# Statuses whose derived phrase would disagree with a code the API already
+# emits from elsewhere. A client checking `error` must not have to know which
+# layer refused it.
+_ERROR_CODE_OVERRIDES: dict[int, str] = {
+    # RateLimitMiddleware writes its own 429 body with this code; the demo
+    # endpoint's per-route limit raises HTTPException and lands here.
+    429: "rate_limit_exceeded",
+}
+
+
 def _error_code(status_code: int) -> str:
     """Map a status code to a stable machine-readable code.
 
     ``404`` becomes ``not_found``, ``409`` becomes ``conflict``. Derived from
-    the HTTP reason phrase so a new status needs no table entry.
+    the HTTP reason phrase so a new status needs no table entry, with an
+    override where a code is already established.
     """
+    override = _ERROR_CODE_OVERRIDES.get(status_code)
+    if override is not None:
+        return override
     try:
         phrase = HTTPStatus(status_code).phrase
     except ValueError:

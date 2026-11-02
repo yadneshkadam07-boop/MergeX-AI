@@ -1,13 +1,42 @@
 import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { FileQuestion, Home, ArrowLeft } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function NotFoundPage() {
+  useDocumentTitle("Page Not Found");
+
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col items-start justify-center gap-4 px-4">
-      <p className="text-muted-foreground font-mono text-sm">404</p>
-      <h1 className="text-3xl font-semibold tracking-tight">Page not found</h1>
-      <Link to="/" className="text-sm underline underline-offset-4">
-        Back to the start
-      </Link>
-    </main>
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 text-center">
+      <div className="bg-muted text-muted-foreground flex size-16 items-center justify-center rounded-2xl shadow-xs">
+        <FileQuestion className="size-8" />
+      </div>
+
+      <span className="text-muted-foreground mt-6 font-mono text-sm font-semibold tracking-wider uppercase">
+        404 Error
+      </span>
+      <h1 className="text-foreground mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
+        Page Not Found
+      </h1>
+      <p className="text-muted-foreground mt-3 max-w-md text-sm">
+        The page you are looking for doesn't exist, has been moved, or belongs to a different route.
+      </p>
+
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Button asChild variant="default" className="gap-2 text-xs font-semibold">
+          <Link to="/dashboard">
+            <Home className="size-4" /> Back to Dashboard
+          </Link>
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-2 text-xs font-semibold"
+          onClick={() => window.history.back()}
+        >
+          <ArrowLeft className="size-4" /> Go Back
+        </Button>
+      </div>
+    </div>
   );
 }

@@ -1,27 +1,107 @@
-import { Route, Routes } from "react-router-dom";
-
+import { lazy, Suspense, useEffect } from "react";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AnalysisPage } from "@/pages/AnalysisPage";
-import { DashboardPage } from "@/pages/DashboardPage";
-import { LandingPage } from "@/pages/LandingPage";
-import { NotFoundPage } from "@/pages/NotFoundPage";
+import { Toaster } from "@/components/ui/sonner";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { LoadingState } from "@/components/shared/LoadingState";
 
-/**
- * Route table.
- *
- * An analysis has two views: the live run and the finished report. They are
- * separate routes rather than one page that changes shape, so a report can
- * be linked to and reloaded without re-entering a "watching" state.
- */
+import { PublicLayout } from "@/layouts/PublicLayout";
+import { AppLayout } from "@/layouts/AppLayout";
+import { ProjectLayout } from "@/layouts/ProjectLayout";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
+
+// Code-split pages for high performance and reduced initial bundle
+const Landing = lazy(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
+const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
+const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const NewAnalysis = lazy(() =>
+  import("@/pages/NewAnalysis").then((m) => ({ default: m.NewAnalysis })),
+);
+const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const NotFoundPage = lazy(() =>
+  import("@/pages/NotFoundPage").then((m) => ({ default: m.NotFoundPage })),
+);
+
+// Project Sub-pages (Architecture and Docs loaded strictly on demand)
+const ProjectOverview = lazy(() =>
+  import("@/pages/ProjectOverview").then((m) => ({ default: m.ProjectOverview })),
+);
+const ProjectIntegration = lazy(() =>
+  import("@/pages/ProjectIntegration").then((m) => ({ default: m.ProjectIntegration })),
+);
+const ProjectSecurity = lazy(() =>
+  import("@/pages/ProjectSecurity").then((m) => ({ default: m.ProjectSecurity })),
+);
+const ProjectDependencies = lazy(() =>
+  import("@/pages/ProjectDependencies").then((m) => ({ default: m.ProjectDependencies })),
+);
+const ProjectDeploy = lazy(() =>
+  import("@/pages/ProjectDeploy").then((m) => ({ default: m.ProjectDeploy })),
+);
+const ProjectArchitecture = lazy(() =>
+  import("@/pages/ProjectArchitecture").then((m) => ({ default: m.ProjectArchitecture })),
+);
+const ProjectDocs = lazy(() =>
+  import("@/pages/ProjectDocs").then((m) => ({ default: m.ProjectDocs })),
+);
+
+function RouteChangeHandler() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    // Accessibility: shift focus to page title or main landmark on navigation
+    const target = document.querySelector<HTMLElement>("main h1, #main-content");
+    if (target) {
+      target.focus({ preventScroll: true });
+    }
+  }, [pathname]);
+
+  return null;
+}
+
 export default function App() {
   return (
-    <TooltipProvider delayDuration={200}>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/analyses/:analysisId" element={<AnalysisPage />} />
-        <Route path="/analyses/:analysisId/report" element={<DashboardPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </TooltipProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <TooltipProvider delayDuration={200}>
+          <RouteChangeHandler />
+          <Suspense fallback={<LoadingState className="my-12" minHeight="min-h-[400px]" />}>
+            <Routes>
+              {/* Public Routes (inside PublicLayout) */}
+              <Route element={<PublicLayout />}>
+                <Route path="/" element={<Landing />} />
+                <Route path="/login" element={<Login />} />
+              </Route>
+
+              {/* Protected App Shell Routes (inside ProtectedRoute + AppLayout) */}
+              <Route element={<ProtectedRoute />}>
+                <Route element={<AppLayout />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/analyze" element={<NewAnalysis />} />
+                  <Route path="/settings" element={<Settings />} />
+
+                  {/* Nested /project/:id routes under ProjectLayout */}
+                  <Route path="/project/:id" element={<ProjectLayout />}>
+                    <Route index element={<ProjectOverview />} />
+                    <Route path="integration" element={<ProjectIntegration />} />
+                    <Route path="security" element={<ProjectSecurity />} />
+                    <Route path="dependencies" element={<ProjectDependencies />} />
+                    <Route path="deploy" element={<ProjectDeploy />} />
+                    <Route path="architecture" element={<ProjectArchitecture />} />
+                    <Route path="docs" element={<ProjectDocs />} />
+                  </Route>
+                </Route>
+              </Route>
+
+              {/* 404 Catch-All */}
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </Suspense>
+          <Toaster position="bottom-right" richColors closeButton />
+        </TooltipProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

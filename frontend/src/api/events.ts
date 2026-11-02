@@ -1,5 +1,6 @@
 import type { Category } from "@/api/analyses";
 import { API_BASE_URL } from "@/lib/env";
+import { getAuthToken } from "@/lib/http";
 
 /**
  * The pipeline stages the backend streams, in the order they occur.
@@ -69,11 +70,21 @@ export const STAGE_CATEGORY: Partial<Record<Stage, Category>> = {
  *
  * `lastEventId` is passed as a query parameter rather than the standard
  * `Last-Event-ID` header because `EventSource` cannot set headers. The
- * backend accepts either.
+ * backend accepts either. Authentication token is also passed via query param
+ * since EventSource does not support custom Authorization headers.
  */
 export function eventStreamUrl(analysisId: string, lastEventId = 0): string {
   const base = `${API_BASE_URL}/api/v1/analyses/${analysisId}/events`;
-  return lastEventId > 0 ? `${base}?last_event_id=${lastEventId}` : base;
+  const params = new URLSearchParams();
+  if (lastEventId > 0) {
+    params.set("last_event_id", String(lastEventId));
+  }
+  const token = getAuthToken();
+  if (token) {
+    params.set("token", token);
+  }
+  const queryString = params.toString();
+  return queryString ? `${base}?${queryString}` : base;
 }
 
 export function isTerminal(event: AnalysisEvent): boolean {

@@ -18,6 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "check:contrast": "node --experimental-strip-types scripts/check-contrast.ts",
     "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
@@ -31,6 +32,7 @@
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4",
     "recharts": "^3.10.1",
+    "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {

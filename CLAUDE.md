@@ -186,7 +186,7 @@ floor at 0. Per-category sub-scores are computed the same way over that category
 | 3 | Rule engines (16 rules), OSV lookup, dedupe, scoring | **done** |
 | 4 | LangGraph workflow, Gemini explanations, SSE streaming | **done** |
 | 5 | Frontend pages wired to the API | **done** |
-| 6 | Architecture graph, polish, README screenshots, deploy configs | next |
+| 6 | Architecture graph, polish, README screenshots, deploy configs | **done** |
 
 Explicitly **out of scope** for now (stub only): documentation generation, deployment
 readiness check, PR comment bot, VS Code extension.
@@ -542,6 +542,25 @@ Ambiguities resolved while building, with the reasoning. Append, do not rewrite.
 - **`mixed-line-ending` skips `*.ps1`,** because `.gitattributes` mandates CRLF there.
   (Related trap: `pathlib.write_text` on Windows translates `\n` to `\r\n`, so a Python
   script that rewrites a tracked file will introduce CRLF unless it passes `newline="\n"`.)
+
+### Phase 6
+
+- **Interactive Architecture visualizer via React Flow with route-level code splitting.**
+  The architecture graph is loaded dynamically (`React.lazy`) to prevent `@xyflow/react` and
+  layout dependencies from bloating the initial bundle. Nodes represent services, routes,
+  and databases with status-coded borders and metric badges derived from deterministic
+  analysis findings.
+- **Stateless JWT authentication with demo guest retention.**
+  Authentication uses standard Bearer JWTs (`HS256`) with salted password hashing. Unauthenticated
+  users can explore bundled demo repositories flagged with `is_demo=True`, which are pruned
+  periodically by `demo_cleanup.py` on a retention schedule without interfering with registered
+  projects.
+- **Deploy Readiness Engine & Checklist.**
+  A dedicated analysis pass verifies environment variables against code references, Dockerfiles,
+  port configurations, and production manifests, surfacing blocking issues before cloud push.
+- **Dual-platform deployment configuration.**
+  `render.yaml` orchestrates the Python FastAPI backend, background workers, and PostgreSQL,
+  while `frontend/vercel.json` provides client-side SPA routing and security headers for Vercel.
 
 ---
 

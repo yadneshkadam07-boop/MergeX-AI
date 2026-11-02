@@ -10,7 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, computed_field, field_validator
+from pydantic import Field, SecretStr, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # backend/app/core/config.py -> parents[2] == backend/
@@ -72,10 +72,36 @@ class Settings(BaseSettings):
 
     # ---- Rate limiting -----------------------------------------------------
     rate_limit_per_minute: int = Field(default=60, ge=1)
+    # The demo endpoint is unauthenticated and does real work -- it packs an
+    # archive, imports it and runs a full analysis -- so it gets its own, much
+    # tighter limit on top of the blanket one. An hour window rather than a
+    # minute: the point is to stop someone looping it, not to pace a person
+    # clicking the button twice.
+    demo_rate_limit_per_hour: int = Field(default=5, ge=1)
+    # Strict per-minute cap on the demo endpoint. This is the primary abuse
+    # barrier: 5 requests per minute is enough for a live demo but too slow
+    # for a loop. The hourly cap is a secondary backstop.
+    demo_rate_limit_per_minute: int = Field(default=5, ge=1)
+    # Short-window burst guard stacked on top of the hourly cap. Two requests
+    # per 10 minutes stops a client from draining their hourly budget in one
+    # second, while still allowing a person to click the button twice quickly.
+    demo_burst_limit: int = Field(default=2, ge=1)
+    demo_burst_window_minutes: int = Field(default=10, ge=1)
+    # Demo projects are disposable. They are deleted on this schedule so an
+    # unauthenticated endpoint cannot fill the database or the disk.
+    demo_retention_hours: int = Field(default=24, ge=1)
+    demo_cleanup_interval_minutes: int = Field(default=60, ge=1)
     # Take the client address from X-Forwarded-For. Enable this ONLY when a
     # trusted proxy overwrites that header (Render, a load balancer); otherwise
     # a client can forge a new identity per request and bypass the limit.
     trust_proxy_headers: bool = False
+
+    # ---- Authentication & Security -----------------------------------------
+    jwt_secret: str = "mergex-dev-secret-change-in-production-0987654321"
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_minutes: int = 1440
+    auth_rate_limit_per_minute: int = 15
+    allow_anonymous_user: bool = False
 
     # ---- External services -------------------------------------------------
     osv_api_url: str = "https://api.osv.dev/v1/querybatch"
@@ -93,6 +119,58 @@ class Settings(BaseSettings):
     def _normalise_prefix(cls, value: str) -> str:
         prefix = "/" + value.strip("/")
         return "" if prefix == "/" else prefix
+
+    @model_validator(mode="after")
+    def _production_readiness_check(self) -> Settings:
+        """Fail fast with a useful message for obvious production misconfigurations.
+
+        Runs after all individual field validators so every field has its final
+        value. Only fires in ``production`` so local and staging environments
+        are not burdened with mandatory secrets during development.
+        """
+        if self.app_env != "production":
+            return self
+
+        errors: list[str] = []
+
+        # A default local Postgres URL in production means the operator forgot
+        # to set DATABASE_URL; it will connection-refuse immediately, but the
+        # message will be an obscure asyncpg error rather than a clear one.
+        _local_defaults = {
+            "postgresql+asyncpg://mergex:mergex@localhost:5432/mergex",
+            "postgresql+asyncpg://mergex:mergex@db:5432/mergex",
+        }
+        if self.database_url in _local_defaults:
+            errors.append(
+                "DATABASE_URL is the local development default. "
+                "Set it to your Supabase (or other) connection string."
+            )
+
+        # JWT secret cannot be the development default in production
+        if not self.jwt_secret or "dev-secret" in self.jwt_secret:
+            errors.append("JWT_SECRET must be set to a secure, random secret in production.")
+
+        if self.allow_anonymous_user:
+            errors.append("ALLOW_ANONYMOUS_USER cannot be true in production.")
+
+        # An empty CORS_ORIGINS list means the CORSMiddleware will reject every
+        # browser request, making the frontend completely non-functional.
+        if not self.cors_origins:
+            errors.append(
+                "CORS_ORIGINS is empty. Set it to your Vercel deployment URL, "
+                "e.g. https://your-app.vercel.app"
+            )
+        elif any(o.strip() == "*" for o in self.cors_origins):
+            errors.append(
+                "CORS_ORIGINS contains a wildcard (*). "
+                "Wildcards are not safe in production; use explicit origins."
+            )
+
+        if errors:
+            joined = "; ".join(errors)
+            raise ValueError(f"Production startup check failed ({len(errors)} issue(s)): {joined}")
+
+        return self
 
     @computed_field  # type: ignore[prop-decorator]
     @property

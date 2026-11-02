@@ -1,14 +1,44 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { useCardSpotlight } from "@/hooks/use-card-spotlight"
 
-function Card({ className, ...props }: React.ComponentProps<"div">) {
+export interface CardProps extends React.ComponentProps<"div"> {
+  interactive?: boolean
+}
+
+function Card({
+  className,
+  interactive = false,
+  onPointerMove,
+  onPointerLeave,
+  ...props
+}: CardProps) {
+  const spotlight = useCardSpotlight<HTMLDivElement>()
+
   return (
     <div
       data-slot="card"
       className={cn(
         "flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm",
+        interactive && "card-interactive",
         className
       )}
+      onPointerMove={
+        interactive
+          ? (e) => {
+              spotlight.onPointerMove(e)
+              onPointerMove?.(e)
+            }
+          : onPointerMove
+      }
+      onPointerLeave={
+        interactive
+          ? (e) => {
+              spotlight.onPointerLeave(e)
+              onPointerLeave?.(e)
+            }
+          : onPointerLeave
+      }
       {...props}
     />
   )

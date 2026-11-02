@@ -60,6 +60,14 @@ class IssueCategory(StrEnum):
     DEPENDENCY = "dependency"
 
 
+class IssueStatus(StrEnum):
+    """Workflow state of a finding in the project dashboard."""
+
+    OPEN = "open"
+    RESOLVED = "resolved"
+    IGNORED = "ignored"
+
+
 class Severity(StrEnum):
     """Impact ranking. Drives the health-score deduction."""
 
