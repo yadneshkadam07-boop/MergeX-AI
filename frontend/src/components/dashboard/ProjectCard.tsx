@@ -17,12 +17,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
   return (
     <Link
       to={`/project/${project.id}`}
-      className="group focus-visible:ring-ring block rounded-xl focus:outline-hidden focus-visible:ring-2"
+      className="group focus-visible:ring-ring block w-full min-w-0 rounded-xl focus:outline-hidden focus-visible:ring-2"
     >
-      <Card interactive className="bg-card h-full border">
-        <CardHeader className="p-5 pb-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
+      <Card interactive className="bg-card h-full w-full min-w-0 gap-0 overflow-hidden border p-0">
+        <CardHeader className="w-full min-w-0 p-5 pb-3">
+          <div className="flex w-full min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
               <h3 className="text-foreground group-hover:text-primary truncate text-base font-semibold transition-colors">
                 {project.name}
               </h3>
@@ -33,11 +33,11 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 </span>
               </p>
             </div>
-            <StatusBadge status={project.status} />
+            <StatusBadge status={project.status} className="shrink-0" />
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-4 p-5 pt-1">
+        <CardContent className="w-full min-w-0 space-y-4 p-5 pt-1">
           {/* Tech stack chips */}
           <div className="flex min-h-[1.5rem] flex-wrap gap-1.5">
             {project.stack.map((tech) => (
@@ -57,31 +57,31 @@ export function ProjectCard({ project }: ProjectCardProps) {
             {project.status === "analyzing" ? (
               <span className="text-muted-foreground font-mono text-xs italic">Evaluating...</span>
             ) : (
-              <HealthScoreBadge score={project.healthScore} />
+              <HealthScoreBadge score={project.healthScore} className="shrink-0" />
             )}
           </div>
 
           {/* 4 category issue breakdown numbers */}
           <div className="bg-muted/40 grid grid-cols-4 gap-1.5 rounded-lg border p-2 text-center">
-            <div className="space-y-0.5">
+            <div className="min-w-0 space-y-0.5">
               <div className="text-foreground font-mono text-xs font-bold">
                 {issueCounts.integration}
               </div>
               <div className="text-muted-foreground truncate text-[10px]">Integr.</div>
             </div>
-            <div className="space-y-0.5">
+            <div className="min-w-0 space-y-0.5">
               <div className="text-foreground font-mono text-xs font-bold">
                 {issueCounts.security}
               </div>
               <div className="text-muted-foreground truncate text-[10px]">Secur.</div>
             </div>
-            <div className="space-y-0.5">
+            <div className="min-w-0 space-y-0.5">
               <div className="text-foreground font-mono text-xs font-bold">
                 {issueCounts.dependencies}
               </div>
               <div className="text-muted-foreground truncate text-[10px]">Dep.</div>
             </div>
-            <div className="space-y-0.5">
+            <div className="min-w-0 space-y-0.5">
               <div className="text-foreground font-mono text-xs font-bold">
                 {issueCounts.deployment}
               </div>
@@ -91,8 +91,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
           {/* Last scanned timestamp */}
           <div className="text-muted-foreground flex items-center gap-1.5 pt-1 text-[11px]">
-            <Clock className="size-3" />
-            <span>Scanned {formatRelativeTime(project.lastScannedAt)}</span>
+            <Clock className="size-3 shrink-0" />
+            <span className="truncate">Scanned {formatRelativeTime(project.lastScannedAt)}</span>
           </div>
         </CardContent>
       </Card>

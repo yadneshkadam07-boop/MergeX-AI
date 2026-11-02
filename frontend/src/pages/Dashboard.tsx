@@ -32,9 +32,10 @@ export function Dashboard() {
     setError(null);
     try {
       const data = await getProjects();
-      setProjects(data);
+      setProjects(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load projects:", err);
+      setProjects([]);
       setError(err instanceof Error ? err.message : "Failed to load projects. Please try again.");
     } finally {
       setLoading(false);
@@ -47,18 +48,27 @@ export function Dashboard() {
 
   // Summary statistics
   const stats = useMemo(() => {
-    const total = projects.length;
-    const completedProjects = projects.filter((p) => p.status === "completed");
+    const list = Array.isArray(projects) ? projects : [];
+    const total = list.length;
+    const completedProjects = list.filter((p) => p && p.status === "completed");
     const avgScore =
       completedProjects.length > 0
         ? Math.round(
-            completedProjects.reduce((acc, p) => acc + p.healthScore, 0) / completedProjects.length,
+            completedProjects.reduce((acc, p) => acc + (p?.healthScore || 0), 0) /
+              completedProjects.length,
           )
         : 0;
 
-    const totalOpenIssues = projects.reduce((acc, p) => {
-      const counts = p.issueCounts;
-      return acc + counts.integration + counts.security + counts.dependencies + counts.deployment;
+    const totalOpenIssues = list.reduce((acc, p) => {
+      const counts = p?.issueCounts;
+      if (!counts) return acc;
+      return (
+        acc +
+        (counts.integration || 0) +
+        (counts.security || 0) +
+        (counts.dependencies || 0) +
+        (counts.deployment || 0)
+      );
     }, 0);
 
     return { total, avgScore, totalOpenIssues };
@@ -66,11 +76,16 @@ export function Dashboard() {
 
   // Filtered projects
   const filteredProjects = useMemo(() => {
-    return projects.filter((p) => {
+    const list = Array.isArray(projects) ? projects : [];
+    return list.filter((p) => {
+      if (!p) return false;
+      const name = p.name || "";
+      const owner = p.owner || "";
+      const stack = Array.isArray(p.stack) ? p.stack : [];
       const matchesSearch =
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.owner.toLowerCase().includes(search.toLowerCase()) ||
-        p.stack.some((tech) => tech.toLowerCase().includes(search.toLowerCase()));
+        name.toLowerCase().includes(search.toLowerCase()) ||
+        owner.toLowerCase().includes(search.toLowerCase()) ||
+        stack.some((tech) => tech.toLowerCase().includes(search.toLowerCase()));
 
       const matchesStatus =
         statusFilter === "all" ? true : p.status === (statusFilter as ProjectStatus);
@@ -162,7 +177,7 @@ export function Dashboard() {
           </div>
 
           {/* Project Cards Grid or Empty State */}
-          {projects.length === 0 ? (
+          {!Array.isArray(projects) || projects.length === 0 ? (
             <DashboardEmptyState />
           ) : filteredProjects.length === 0 ? (
             <DashboardEmptyState
@@ -173,7 +188,7 @@ export function Dashboard() {
               }}
             />
           ) : (
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
               {filteredProjects.map((project) => (
                 <ProjectCard key={project.id} project={project} />
               ))}

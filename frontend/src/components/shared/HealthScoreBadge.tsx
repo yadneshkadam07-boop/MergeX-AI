@@ -30,7 +30,7 @@ export function HealthScoreBadge({ score, className, showLabel = false }: Health
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold select-none",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold select-none",
         colorClasses,
         className,
       )}

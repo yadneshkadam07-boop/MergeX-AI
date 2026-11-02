@@ -22,7 +22,8 @@ export * from "./api/types";
 export { getAnalysisSteps } from "./api/mock";
 
 export async function getProjects(): Promise<Project[]> {
-  return isMock("projects") ? mockApi.getProjects() : realApi.getProjects();
+  const result = isMock("projects") ? await mockApi.getProjects() : await realApi.getProjects();
+  return Array.isArray(result) ? result : [];
 }
 
 export async function getProject(id: string): Promise<Project | null> {

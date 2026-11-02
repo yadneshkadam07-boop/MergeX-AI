@@ -183,17 +183,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Real GitHub OAuth redirect flow
+    // Real GitHub OAuth redirect flow if configured
     if (config.githubClientId) {
       const redirectUri = `${window.location.origin}/login/callback`;
       const scope = "read:user user:email repo";
       window.location.href = `https://github.com/login/oauth/authorize?client_id=${config.githubClientId}&redirect_uri=${encodeURIComponent(
         redirectUri,
       )}&scope=${encodeURIComponent(scope)}`;
-    } else {
-      toast.error(
-        "GitHub Client ID not configured. Set VITE_GITHUB_CLIENT_ID in your environment.",
-      );
+      return;
+    }
+
+    // Local development demo fallback: authenticate as demo developer so the app is immediately usable
+    setIsLoading(true);
+    try {
+      let res: { access_token: string; user?: User };
+      try {
+        res = await http.post<{ access_token: string; user?: User }>("/auth/token", {
+          email: "developer@mergex.ai",
+          password: "Password123!",
+        });
+      } catch {
+        // If the developer user does not exist in this database instance, register it
+        res = await http.post<{ access_token: string; user?: User }>("/auth/register", {
+          email: "developer@mergex.ai",
+          password: "Password123!",
+          name: "Alex Vance",
+        });
+      }
+
+      setAuthToken(res.access_token);
+      setTokenState(res.access_token);
+
+      if (res.user) {
+        setUser(res.user);
+      } else {
+        const profile = await http.get<User>("/auth/me");
+        setUser(profile);
+      }
+
+      toast.success("Connected via GitHub demo credentials!");
+    } catch (err) {
+      console.error("Demo GitHub login failed:", err);
+      toast.error("Failed to authenticate demo account. Please log in with email.");
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
