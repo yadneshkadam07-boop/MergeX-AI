@@ -16,25 +16,13 @@ services:
   - type: web
     name: mergex-backend
     runtime: docker
-    # Build the `prod` target from backend/Dockerfile.
-    # The Dockerfile installs git and curl in the base layer, so both are
-    # available in the production image without any extra build step.
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    dockerBuildTarget: prod
+    plan: free
 
-    # Run `alembic upgrade head` before traffic switches to the new container.
-    # Must run against the *direct* connection (port 5432), not the pooler.
-    preDeployCommand: "cd /app && alembic upgrade head"
+    startCommand: "sh -c 'alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
 
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-
-    # One instance only — see note above.
-    numInstances: 1
-
-    plan: starter
-
-    region: oregon   # change to match your Supabase region
+    region: oregon
 
     healthCheckPath: /health
 
