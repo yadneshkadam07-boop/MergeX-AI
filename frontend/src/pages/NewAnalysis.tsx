@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import type { AnalysisStep, Project } from "@/types/project";
-import { createAnalysis, updateProject, getAnalysisSteps, getAnalysisStatus } from "@/lib/api";
+import {
+  createAnalysis,
+  updateProject,
+  getProject,
+  getAnalysisSteps,
+  getAnalysisStatus,
+} from "@/lib/api";
 import { isMock } from "@/lib/config";
 import { generateProjectDetails } from "@/lib/project-generator";
 import { useDocumentTitle } from "@/hooks/use-document-title";
@@ -14,6 +20,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Circle,
+  Download,
   FolderGit2,
   Layers,
   Loader2,
@@ -22,6 +29,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
+import { exportReportMarkdown } from "@/lib/export-report";
 
 const GITHUB_REGEX = /^https?:\/\/(www\.)?github\.com\/[\w.-]+\/[\w.-]+\/?$/i;
 const SAMPLE_REPO = "https://github.com/shadcn-ui/taxonomy";
@@ -40,6 +48,9 @@ export function NewAnalysis() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [steps, setSteps] = useState<AnalysisStep[]>([]);
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [isComplete, setIsComplete] = useState(false);
+  const [completedScore, setCompletedScore] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // References to keep timer cleanups bulletproof on unmount or cancel
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,11 +135,16 @@ export function NewAnalysis() {
 
         if (status.status === "completed") {
           setSteps((prev) => prev.map((s) => ({ ...s, status: "done" })));
-          timerRef.current = setTimeout(() => {
-            if (!isCancelledRef.current) {
-              void navigate(`/project/${projectId}`);
+          setActiveStepIndex(stepTemplates.length);
+          setIsComplete(true);
+          try {
+            const finished = await getProject(projectId);
+            if (finished?.healthScore !== undefined) {
+              setCompletedScore(finished.healthScore);
             }
-          }, 800);
+          } catch {
+            // non-fatal
+          }
           return;
         }
 
@@ -195,6 +211,16 @@ export function NewAnalysis() {
     }, stepDuration);
   };
 
+  const handleExportReport = async () => {
+    if (!currentProject) return;
+    setExporting(true);
+    try {
+      await exportReportMarkdown(currentProject.id, currentProject.name);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const finalizeAnalysis = async (projectId: string) => {
     // Generate realistic randomized scores (55 - 95)
     const randomScore = Math.floor(Math.random() * 41) + 55;
@@ -211,12 +237,11 @@ export function NewAnalysis() {
         scanMeta: details.scanMeta,
       });
 
-      // Pause briefly (~800ms) before navigating to /project/:id
-      timerRef.current = setTimeout(() => {
-        if (!isCancelledRef.current) {
-          void navigate(`/project/${projectId}`);
-        }
-      }, 800);
+      // Mark all steps completed and show completion actions
+      setSteps((prev) => prev.map((s) => ({ ...s, status: "done" })));
+      setActiveStepIndex(8);
+      setCompletedScore(randomScore);
+      setIsComplete(true);
     } catch (err) {
       console.error("Error finalizing analysis:", err);
     }
@@ -230,6 +255,8 @@ export function NewAnalysis() {
     setPhase("input");
     setActiveStepIndex(0);
     setCurrentProject(null);
+    setIsComplete(false);
+    setCompletedScore(null);
   };
 
   const progressPercentage = Math.round((activeStepIndex / 8) * 100);
@@ -354,7 +381,7 @@ export function NewAnalysis() {
             <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 flex-1">
                 <span className="text-primary text-xs font-semibold tracking-wider uppercase">
-                  Running Multi-Agent Diagnostics
+                  {isComplete ? "Diagnostics Complete" : "Running Multi-Agent Diagnostics"}
                 </span>
                 <CardTitle className="text-foreground mt-0.5 truncate text-xl font-bold tracking-tight">
                   {currentProject?.name || "Repository"}
@@ -367,22 +394,83 @@ export function NewAnalysis() {
                 variant="outline"
                 size="sm"
                 onClick={handleCancel}
-                className="text-muted-foreground hover:text-destructive shrink-0 gap-1.5 self-start text-xs sm:self-auto"
+                className="text-muted-foreground hover:text-foreground shrink-0 gap-1.5 self-start text-xs sm:self-auto"
               >
                 <RotateCcw className="size-3.5" />
-                Cancel
+                {isComplete ? "New Scan" : "Cancel"}
               </Button>
             </div>
 
             {/* Overall Progress Bar */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-semibold">
-                <span className="text-muted-foreground">Overall Progress</span>
-                <span className="text-primary font-mono">{progressPercentage}%</span>
+                <span className="text-muted-foreground">
+                  {isComplete ? "Completed" : "Overall Progress"}
+                </span>
+                <span className="text-primary font-mono">
+                  {isComplete ? "100%" : `${progressPercentage}%`}
+                </span>
               </div>
-              <Progress value={progressPercentage} className="h-2" />
+              <Progress value={isComplete ? 100 : progressPercentage} className="h-2" />
             </div>
           </CardHeader>
+
+          {isComplete && (
+            <div className="mx-6 mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="size-5 text-emerald-500" />
+                    <span className="font-semibold text-emerald-400">Analysis Completed!</span>
+                  </div>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    All architectural audits, security checks, and code scans are ready.
+                  </p>
+                </div>
+                {completedScore !== null && (
+                  <div className="sm:text-right">
+                    <div className="text-muted-foreground text-[11px] font-medium uppercase">
+                      Health Score
+                    </div>
+                    <div className="text-foreground font-mono text-2xl font-black">
+                      {completedScore}/100
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                <Button
+                  onClick={handleExportReport}
+                  disabled={exporting}
+                  className="gap-2 text-xs font-semibold"
+                  size="sm"
+                >
+                  {exporting ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin" />
+                      <span>Exporting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="size-3.5" />
+                      <span>Export Report</span>
+                    </>
+                  )}
+                </Button>
+                {currentProject && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/project/${currentProject.id}`)}
+                    className="gap-1.5 text-xs font-semibold"
+                  >
+                    <span>View Project</span>
+                    <ArrowRight className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           <CardContent className="pt-2">
             {/* Live 8-step Vertical List with aria-live */}

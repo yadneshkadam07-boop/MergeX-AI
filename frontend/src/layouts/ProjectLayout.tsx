@@ -14,7 +14,16 @@ import { Button } from "@/components/ui/button";
 import { ButtonRow } from "@/components/ui/button-row";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertOctagon, ArrowLeft, ExternalLink, FolderX, Loader2, RefreshCw } from "lucide-react";
+import {
+  AlertOctagon,
+  ArrowLeft,
+  Download,
+  ExternalLink,
+  FolderX,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+import { exportReportMarkdown } from "@/lib/export-report";
 
 export function ProjectLayout() {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +31,7 @@ export function ProjectLayout() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
 
   useDocumentTitle(project?.name, "Project");
 
@@ -112,6 +122,18 @@ export function ProjectLayout() {
       console.error("Failed to rescan project:", err);
       if (isMountedRef.current) setRescanning(false);
       toast.error("Failed to rescan project. Please try again.");
+    }
+  };
+
+  const handleExportReport = async () => {
+    if (!project) return;
+    setExportingReport(true);
+    try {
+      await exportReportMarkdown(project.id, project.name);
+    } finally {
+      if (isMountedRef.current) {
+        setExportingReport(false);
+      }
     }
   };
 
@@ -233,6 +255,26 @@ export function ProjectLayout() {
 
         {/* Action Controls */}
         <ButtonRow align="start" className="shrink-0 lg:justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportReport}
+            disabled={exportingReport || project.status === "analyzing"}
+            className="gap-1.5 text-xs font-semibold"
+          >
+            {exportingReport ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                <span>Exporting...</span>
+              </>
+            ) : (
+              <>
+                <Download className="size-3.5" />
+                <span>Export Report</span>
+              </>
+            )}
+          </Button>
+
           <Button asChild variant="outline" size="sm" className="gap-1.5 text-xs">
             <a
               href={project.repoUrl}
