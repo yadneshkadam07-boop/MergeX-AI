@@ -27,13 +27,15 @@ function parseBool(val: unknown, defaultVal: boolean): boolean {
 }
 
 const env = import.meta.env as Record<string, string | undefined>;
-const masterUseMock = parseBool(env.VITE_USE_MOCK, true);
+// Default to real mode (false) in production and when backend is available;
+// can still be explicitly forced to true with VITE_USE_MOCK=true.
+const masterUseMock = parseBool(env.VITE_USE_MOCK, false);
 
 export const config: AppConfig = {
   apiBaseUrl: env.VITE_API_BASE_URL || "/api",
   useMock: masterUseMock,
   mockDelayMs: Number(env.VITE_MOCK_DELAY_MS) || 300,
-  githubClientId: env.VITE_GITHUB_CLIENT_ID || "",
+  githubClientId: env.VITE_GITHUB_CLIENT_ID || "Ov231iBpHwSdnjI5koMF",
   mockEndpoints: {
     projects: parseBool(env.VITE_MOCK_PROJECTS, masterUseMock),
     issues: parseBool(env.VITE_MOCK_ISSUES, masterUseMock),
