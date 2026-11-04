@@ -14,6 +14,9 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 // Code-split pages for high performance and reduced initial bundle
 const Landing = lazy(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
 const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
+const AuthCallback = lazy(() =>
+  import("@/pages/AuthCallback").then((m) => ({ default: m.AuthCallback })),
+);
 const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const NewAnalysis = lazy(() =>
   import("@/pages/NewAnalysis").then((m) => ({ default: m.NewAnalysis })),
@@ -73,6 +76,7 @@ export default function App() {
               <Route element={<PublicLayout />}>
                 <Route path="/" element={<Landing />} />
                 <Route path="/login" element={<Login />} />
+                <Route path="/login/callback" element={<AuthCallback />} />
               </Route>
 
               {/* Protected App Shell Routes (inside ProtectedRoute + AppLayout) */}

@@ -16,6 +16,7 @@ export interface AuthContextType {
   register: (email: string, password: string, name?: string) => Promise<void>;
   loginWithCredentials: (email: string, password: string) => Promise<void>;
   loginWithGitHub: () => Promise<void>;
+  loginWithGitHubCallback: (code: string, redirectUri?: string) => Promise<void>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
 }

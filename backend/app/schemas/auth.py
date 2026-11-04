@@ -60,6 +60,18 @@ class UserLoginRequest(BaseModel):
         return ident.strip().lower()
 
 
+class GitHubOAuthRequest(BaseModel):
+    """Payload containing the GitHub OAuth temporary authorization code."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    code: str = Field(min_length=1, description="GitHub OAuth authorization code.")
+    redirect_uri: str | None = Field(
+        default=None,
+        description="OAuth redirect URI matching the authorization request.",
+    )
+
+
 class UserProfileOut(BaseModel):
     """Authenticated user profile representation."""
 

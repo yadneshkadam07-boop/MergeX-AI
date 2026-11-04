@@ -305,6 +305,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithGitHubCallback = async (code: string, redirectUri?: string): Promise<void> => {
+    setIsLoading(true);
+    try {
+      if (isMock("auth")) {
+        await new Promise((r) => setTimeout(r, 400));
+        const mockToken = "mock_github_jwt_token_abc";
+        setAuthToken(mockToken);
+        setTokenState(mockToken);
+        setUser(MOCK_USER);
+        safeSetStorage(USER_STORAGE_KEY, JSON.stringify(MOCK_USER));
+        safeRemoveStorage(LOGGED_OUT_KEY);
+        toast.success("Signed in with GitHub!");
+        return;
+      }
+
+      const res = await http.post<{ access_token: string; user?: User }>("/auth/github", {
+        code,
+        redirect_uri: redirectUri,
+      });
+
+      setAuthToken(res.access_token);
+      setTokenState(res.access_token);
+
+      const activeUser = res.user || (await http.get<User>("/auth/me"));
+      setUser(activeUser);
+      safeSetStorage(USER_STORAGE_KEY, JSON.stringify(activeUser));
+      safeRemoveStorage(LOGGED_OUT_KEY);
+
+      toast.success(`Welcome, ${activeUser.name || activeUser.githubUsername || "developer"}!`);
+    } catch (err) {
+      console.error("GitHub OAuth callback exchange failed:", err);
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : "Failed to authenticate with GitHub. Please try again.";
+      toast.error(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -315,6 +357,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         loginWithCredentials,
         loginWithGitHub,
+        loginWithGitHubCallback,
         logout,
         updateUser,
       }}

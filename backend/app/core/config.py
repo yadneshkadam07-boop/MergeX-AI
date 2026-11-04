@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     # ---- GitHub ------------------------------------------------------------
     github_token: SecretStr | None = None
     github_api_url: str = "https://api.github.com"
+    github_client_id: str | None = None
+    github_client_secret: SecretStr | None = None
 
     # ---- Analysis sandbox limits ------------------------------------------
     workspace_dir: Path = BACKEND_DIR / ".workspace"

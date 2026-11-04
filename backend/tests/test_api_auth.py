@@ -277,3 +277,104 @@ class TestUserResourceIsolation:
         get_b = client.get("/api/v1/settings", headers=headers_b)
         assert get_b.json()["theme"] == "light"
         assert get_b.json()["alertSeverity"] == "low"
+
+
+class TestGitHubOAuth:
+    def test_github_oauth_missing_credentials_returns_503(
+        self, client: TestClient, monkeypatch: Any
+    ) -> None:
+        from app.core.config import get_settings
+
+        test_settings = client.app.dependency_overrides[get_settings]()
+        monkeypatch.setattr(test_settings, "github_client_id", None)
+        monkeypatch.setattr(test_settings, "github_client_secret", None)
+
+        response = client.post("/api/v1/auth/github", json={"code": "sample_code"})
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "not configured" in response.json()["detail"].lower()
+
+    def test_github_oauth_success_creates_and_logs_in_user(
+        self, client: TestClient, monkeypatch: Any
+    ) -> None:
+        from unittest.mock import patch
+
+        import httpx
+        from pydantic import SecretStr
+
+        from app.core.config import get_settings
+
+        test_settings = client.app.dependency_overrides[get_settings]()
+        monkeypatch.setattr(test_settings, "github_client_id", "test_gh_client_id")
+        monkeypatch.setattr(test_settings, "github_client_secret", SecretStr("test_gh_secret"))
+
+        # Mock responses
+        token_resp = httpx.Response(
+            200,
+            json={"access_token": "gho_test_token_123", "token_type": "bearer"},
+            request=httpx.Request("POST", "https://github.com/login/oauth/access_token"),
+        )
+        user_resp = httpx.Response(
+            200,
+            json={
+                "login": "octocat_developer",
+                "name": "Mona Lisa Octocat",
+                "avatar_url": "https://github.com/images/error/octocat_happy.gif",
+                "email": "octocat@github.com",
+            },
+            request=httpx.Request("GET", "https://api.github.com/user"),
+        )
+
+        async def mock_post(self_client: Any, url: str, **kwargs: Any) -> httpx.Response:
+            return token_resp
+
+        async def mock_get(self_client: Any, url: str, **kwargs: Any) -> httpx.Response:
+            return user_resp
+
+        with (
+            patch.object(httpx.AsyncClient, "post", new=mock_post),
+            patch.object(httpx.AsyncClient, "get", new=mock_get),
+        ):
+            response = client.post(
+                "/api/v1/auth/github",
+                json={
+                    "code": "valid_oauth_code",
+                    "redirect_uri": "https://merge-x-ai.vercel.app/login/callback",
+                },
+            )
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert "access_token" in data
+            assert data["user"]["email"] == "octocat@github.com"
+            assert data["user"]["name"] == "Mona Lisa Octocat"
+            assert data["user"]["githubUsername"] == "octocat_developer"
+
+    def test_github_oauth_invalid_code_returns_400(
+        self, client: TestClient, monkeypatch: Any
+    ) -> None:
+        from unittest.mock import patch
+
+        import httpx
+        from pydantic import SecretStr
+
+        from app.core.config import get_settings
+
+        test_settings = client.app.dependency_overrides[get_settings]()
+        monkeypatch.setattr(test_settings, "github_client_id", "test_gh_client_id")
+        monkeypatch.setattr(test_settings, "github_client_secret", SecretStr("test_gh_secret"))
+
+        error_resp = httpx.Response(
+            200,
+            json={
+                "error": "bad_verification_code",
+                "error_description": "The code passed is invalid.",
+            },
+            request=httpx.Request("POST", "https://github.com/login/oauth/access_token"),
+        )
+
+        async def mock_post(self_client: Any, url: str, **kwargs: Any) -> httpx.Response:
+            return error_resp
+
+        with patch.object(httpx.AsyncClient, "post", new=mock_post):
+            response = client.post("/api/v1/auth/github", json={"code": "expired_code"})
+            assert response.status_code == status.HTTP_400_BAD_REQUEST
+            assert "invalid" in response.json()["detail"].lower()
