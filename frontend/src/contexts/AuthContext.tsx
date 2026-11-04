@@ -78,6 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     safeRemoveStorage(USER_STORAGE_KEY);
     safeSetStorage(LOGGED_OUT_KEY, "true");
     toast.info("You have been signed out.");
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
   }, []);
 
   // Listen for 401 unauthorized events dispatched by the http client
