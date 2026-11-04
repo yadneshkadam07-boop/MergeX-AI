@@ -20,11 +20,11 @@ const ISSUES_OVERRIDES_KEY = "mergex_issue_status_overrides";
 const SETTINGS_KEY = "mergex_user_settings";
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  displayName: "Devin Vance",
-  email: "devin@mergex.ai",
+  displayName: "MergeX Developer",
+  email: "developer@mergex.ai",
   theme: "system",
   githubConnected: true,
-  githubUsername: "devin-vance",
+  githubUsername: "mergex-developer",
   checks: {
     integration: true,
     security: true,

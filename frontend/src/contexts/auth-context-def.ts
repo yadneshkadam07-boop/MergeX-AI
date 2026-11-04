@@ -17,6 +17,7 @@ export interface AuthContextType {
   loginWithCredentials: (email: string, password: string) => Promise<void>;
   loginWithGitHub: () => Promise<void>;
   logout: () => void;
+  updateUser: (updates: Partial<User>) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(undefined);

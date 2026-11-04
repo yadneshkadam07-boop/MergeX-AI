@@ -6,17 +6,55 @@ import { AuthContext, type User } from "./auth-context-def";
 
 export type { User, AuthContextType } from "./auth-context-def";
 
+const USER_STORAGE_KEY = "mergex_auth_user";
+const LOGGED_OUT_KEY = "mergex_auth_logged_out";
+
+function safeGetStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // LocalStorage might be restricted
+  }
+}
+
+function safeRemoveStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // LocalStorage might be restricted
+  }
+}
+
 const MOCK_USER: User = {
   id: "usr_mock_01",
-  email: "devin@mergex.ai",
-  name: "Devin Vance",
+  email: "developer@mergex.ai",
+  name: "MergeX Developer",
   avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-  githubUsername: "mergex-engineer",
+  githubUsername: "mergex-developer",
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setTokenState] = useState<string | null>(getAuthToken());
   const [user, setUser] = useState<User | null>(() => {
+    if (safeGetStorage(LOGGED_OUT_KEY) === "true") {
+      return null;
+    }
+    const saved = safeGetStorage(USER_STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved) as User;
+      } catch {
+        // Invalid json, fall through
+      }
+    }
     if (isMock("auth")) {
       return MOCK_USER;
     }
@@ -24,10 +62,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
   const [isLoading, setIsLoading] = useState<boolean>(!isMock("auth"));
 
+  const updateUser = useCallback((updates: Partial<User>) => {
+    setUser((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, ...updates };
+      safeSetStorage(USER_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const logout = useCallback(() => {
     setAuthToken(null);
     setTokenState(null);
     setUser(null);
+    safeRemoveStorage(USER_STORAGE_KEY);
+    safeSetStorage(LOGGED_OUT_KEY, "true");
     toast.info("You have been signed out.");
   }, []);
 
@@ -84,13 +133,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isMock("auth")) {
         await new Promise((r) => setTimeout(r, 400));
         const mockToken = "mock_jwt_session_token_xyz";
-        setAuthToken(mockToken);
-        setTokenState(mockToken);
-        setUser({
+        const newUser: User = {
           ...MOCK_USER,
           email,
           name: name?.trim() || email.split("@")[0] || "MergeX Developer",
-        });
+        };
+        setAuthToken(mockToken);
+        setTokenState(mockToken);
+        setUser(newUser);
+        safeSetStorage(USER_STORAGE_KEY, JSON.stringify(newUser));
+        safeRemoveStorage(LOGGED_OUT_KEY);
         toast.success("Welcome to MergeX AI!");
         return;
       }
@@ -104,12 +156,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthToken(res.access_token);
       setTokenState(res.access_token);
 
-      if (res.user) {
-        setUser(res.user);
-      } else {
-        const profile = await http.get<User>("/auth/me");
-        setUser(profile);
-      }
+      const activeUser = res.user || (await http.get<User>("/auth/me"));
+      setUser(activeUser);
+      safeSetStorage(USER_STORAGE_KEY, JSON.stringify(activeUser));
+      safeRemoveStorage(LOGGED_OUT_KEY);
 
       toast.success("Account created successfully!");
     } catch (err) {
@@ -130,13 +180,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Simulated mock authentication latency
         await new Promise((r) => setTimeout(r, 400));
         const mockToken = "mock_jwt_session_token_xyz";
-        setAuthToken(mockToken);
-        setTokenState(mockToken);
-        setUser({
+        const newUser: User = {
           ...MOCK_USER,
           email,
           name: email.split("@")[0] || "MergeX Developer",
-        });
+        };
+        setAuthToken(mockToken);
+        setTokenState(mockToken);
+        setUser(newUser);
+        safeSetStorage(USER_STORAGE_KEY, JSON.stringify(newUser));
+        safeRemoveStorage(LOGGED_OUT_KEY);
         toast.success("Welcome back to MergeX AI!");
         return;
       }
@@ -150,12 +203,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthToken(res.access_token);
       setTokenState(res.access_token);
 
-      if (res.user) {
-        setUser(res.user);
-      } else {
-        const profile = await http.get<User>("/auth/me");
-        setUser(profile);
-      }
+      const activeUser = res.user || (await http.get<User>("/auth/me"));
+      setUser(activeUser);
+      safeSetStorage(USER_STORAGE_KEY, JSON.stringify(activeUser));
+      safeRemoveStorage(LOGGED_OUT_KEY);
 
       toast.success("Signed in successfully!");
     } catch (err) {
@@ -178,7 +229,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const mockToken = "mock_github_jwt_token_abc";
       setAuthToken(mockToken);
       setTokenState(mockToken);
-      setUser(MOCK_USER);
+      let currentUser = MOCK_USER;
+      const saved = safeGetStorage(USER_STORAGE_KEY);
+      if (saved) {
+        try {
+          currentUser = JSON.parse(saved) as User;
+        } catch {
+          // Fall back to MOCK_USER
+        }
+      }
+      safeRemoveStorage(LOGGED_OUT_KEY);
+      setUser(currentUser);
       toast.success("Connected via GitHub demo credentials!");
       return;
     }
@@ -214,12 +275,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthToken(res.access_token);
       setTokenState(res.access_token);
 
-      if (res.user) {
-        setUser(res.user);
-      } else {
-        const profile = await http.get<User>("/auth/me");
-        setUser(profile);
-      }
+      const activeUser = res.user || (await http.get<User>("/auth/me"));
+      setUser(activeUser);
+      safeSetStorage(USER_STORAGE_KEY, JSON.stringify(activeUser));
+      safeRemoveStorage(LOGGED_OUT_KEY);
 
       toast.success("Connected via GitHub demo credentials!");
     } catch (err) {
@@ -237,11 +296,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         token,
         isLoading,
-        isAuthenticated: isMock("auth") ? true : Boolean(token && user),
+        isAuthenticated: isMock("auth") ? Boolean(user) : Boolean(token && user),
         register,
         loginWithCredentials,
         loginWithGitHub,
         logout,
+        updateUser,
       }}
     >
       {children}

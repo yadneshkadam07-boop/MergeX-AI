@@ -28,6 +28,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { AlertTriangle, Check, Eye, EyeOff, Key, Moon, Save, Sun, Trash2 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 function GitHubIcon({ className }: { className?: string }) {
   return (
@@ -43,6 +44,7 @@ function GitHubIcon({ className }: { className?: string }) {
 
 export function Settings() {
   const navigate = useNavigate();
+  const { updateUser } = useAuth();
   useDocumentTitle("Settings");
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [originalSettings, setOriginalSettings] = useState<UserSettings | null>(null);
@@ -122,6 +124,7 @@ export function Settings() {
       email: profileEmail,
     };
     await saveSettings(updated);
+    updateUser({ name: profileName, email: profileEmail });
     setSettings(updated);
     setOriginalSettings(updated);
     setProfileSaved(true);

@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -43,6 +43,7 @@ export function AppLayout() {
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Close user dropdown when clicking outside
   useEffect(() => {
@@ -254,6 +255,7 @@ export function AppLayout() {
                       onClick={() => {
                         setUserDropdownOpen(false);
                         logout();
+                        void navigate("/login");
                       }}
                       className="text-destructive hover:bg-destructive/10 flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-xs transition-colors"
                     >
