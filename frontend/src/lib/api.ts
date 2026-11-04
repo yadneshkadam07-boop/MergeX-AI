@@ -13,6 +13,7 @@ import type {
   CreateAnalysisResponse,
   AnalysisStatusResponse,
   ArchitectureResponse,
+  CreatePullRequestResponse,
 } from "./api/types";
 import { isMock } from "./config";
 import { mockApi } from "./api/mock";
@@ -71,6 +72,15 @@ export async function updateIssueStatus(
   return isMock("issues")
     ? mockApi.updateIssueStatus(projectId, issueId, status)
     : realApi.updateIssueStatus(projectId, issueId, status);
+}
+
+export async function createPullRequest(
+  projectId: string,
+  issueId: string,
+): Promise<CreatePullRequestResponse> {
+  return isMock("issues")
+    ? mockApi.createPullRequest(projectId, issueId)
+    : realApi.createPullRequest(projectId, issueId);
 }
 
 export async function getDeployChecklist(projectId: string): Promise<ChecklistItem[]> {

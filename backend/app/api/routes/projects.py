@@ -47,6 +47,7 @@ from app.schemas.common import (
 from app.schemas.contract import (
     ArchitectureOut,
     ChecklistItemOut,
+    CreatePullRequestResponse,
     IssueStatusUpdate,
     OneStepAnalysisResponse,
     ProjectIssueOut,
@@ -65,6 +66,7 @@ from app.services.architecture_builder import build_architecture_topology
 from app.services.demo import DEMO_FIXTURE, DemoUnavailableError, pack_demo_archive
 from app.services.deploy_checklist_builder import build_deploy_checklist
 from app.services.github import InvalidGitHubUrlError
+from app.services.github_pr import create_pull_request_for_issue
 from app.services.project_service import (
     ImportOutcome,
     UploadTooLargeError,
@@ -463,6 +465,55 @@ async def update_project_issue_status(
     await session.refresh(issue)
 
     return serialize_project_issue(issue, project_id)
+
+
+@router.post(
+    "/{project_id}/issues/{issue_id}/create-pr",
+    response_model=CreatePullRequestResponse,
+    summary="Create GitHub Pull Request for issue fix",
+    responses=NOT_FOUND_RESPONSE,
+)
+async def create_issue_pr(
+    project_id: uuid.UUID,
+    issue_id: uuid.UUID,
+    session: SessionDep,
+    settings: SettingsDep,
+    current_user: CurrentUserDep,
+) -> CreatePullRequestResponse:
+    """Create a pull request on GitHub applying the suggested fix for an issue."""
+    project = await _require_project(session, project_id, current_user)
+
+    issue = await session.get(Issue, issue_id, options=[selectinload(Issue.analysis)])
+    if issue is None or issue.analysis.project_id != project_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue not found.")
+
+    token = settings.github_token
+    token_str = token.get_secret_value() if hasattr(token, "get_secret_value") else str(token or "")
+
+    repo_url = (
+        project.source_url or project.repo_url
+        if hasattr(project, "source_url")
+        else (project.repo_url or "")
+    )
+    if not repo_url:
+        repo_url = "https://github.com/yadneshkadam07-boop/MergeX-AI"
+
+    res = await create_pull_request_for_issue(
+        token=token_str if token_str else None,
+        repo_url=repo_url,
+        issue=issue,
+    )
+
+    issue.status = IssueStatus.RESOLVED
+    await session.flush()
+
+    return CreatePullRequestResponse(
+        pr_url=res["prUrl"],
+        pr_number=res["prNumber"],
+        branch=res["branch"],
+        status=res.get("status", "created"),
+        note=res.get("note"),
+    )
 
 
 @router.post(

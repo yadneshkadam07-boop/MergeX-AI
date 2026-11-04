@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Issue, IssueStatus } from "@/types/issue";
-import { getIssue, updateIssueStatus } from "@/lib/api";
+import { getIssue, updateIssueStatus, createPullRequest } from "@/lib/api";
+import type { CreatePullRequestResponse } from "@/lib/api/types";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { Badge } from "@/components/ui/badge";
@@ -21,8 +22,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  ExternalLink,
   EyeOff,
   FileCode,
+  GitPullRequest,
+  Loader2,
   RotateCcw,
   Sparkles,
 } from "lucide-react";
@@ -45,16 +49,20 @@ export function IssueDetailSheet({
   const [loading, setLoading] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [creatingPr, setCreatingPr] = useState(false);
+  const [prResult, setPrResult] = useState<CreatePullRequestResponse | null>(null);
 
   // Close sheet by removing query param
   const handleClose = useCallback(() => {
     const next = new URLSearchParams(searchParams);
     next.delete("issue");
     setSearchParams(next, { replace: true });
+    setPrResult(null);
   }, [searchParams, setSearchParams]);
 
   // Fetch issue when issueId changes
   useEffect(() => {
+    setPrResult(null);
     if (!issueId) {
       setIssue(null);
       return;
@@ -133,6 +141,29 @@ Please implement the exact fix in ${issue.filePath}.`;
     setCopiedPrompt(true);
     toast.success("AI fix prompt copied to clipboard");
     setTimeout(() => setCopiedPrompt(false), 2500);
+  };
+
+  const handleCreatePr = async () => {
+    if (!issue || creatingPr) return;
+    setCreatingPr(true);
+    try {
+      const res = await createPullRequest(projectId, issue.id);
+      setPrResult(res);
+      const updated: Issue = { ...issue, status: "resolved" };
+      setIssue(updated);
+      if (onIssueUpdated) onIssueUpdated(updated);
+      toast.success(`GitHub Pull Request #${res.prNumber} opened successfully!`, {
+        action: {
+          label: "View PR",
+          onClick: () => window.open(res.prUrl, "_blank"),
+        },
+      });
+    } catch (err) {
+      console.error("Failed to create pull request:", err);
+      toast.error("Failed to create GitHub Pull Request. Please verify your token permissions.");
+    } finally {
+      setCreatingPr(false);
+    }
   };
 
   const handleUpdateStatus = async (newStatus: IssueStatus) => {
@@ -430,6 +461,57 @@ Please implement the exact fix in ${issue.filePath}.`;
                     </div>
                   </div>
                 )}
+
+                {/* One-Click Pull Request Action */}
+                <div className="pt-2">
+                  {prResult ? (
+                    <div className="space-y-2 rounded-lg border border-purple-500/30 bg-purple-500/10 p-3.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <GitPullRequest className="size-4 shrink-0 text-purple-400" />
+                          <span className="text-xs font-semibold text-purple-300">
+                            Pull Request Opened on GitHub!
+                          </span>
+                        </div>
+                        <span className="rounded bg-purple-500/20 px-2 py-0.5 font-mono text-[10px] text-purple-300">
+                          PR #{prResult.prNumber}
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground text-[11px]">
+                        Branch <span className="text-foreground font-mono">{prResult.branch}</span>{" "}
+                        created with automated remediation patch.
+                      </p>
+                      <Button
+                        asChild
+                        size="sm"
+                        className="h-8 w-full gap-1.5 bg-purple-600 text-xs font-semibold text-white hover:bg-purple-500"
+                      >
+                        <a href={prResult.prUrl} target="_blank" rel="noopener noreferrer">
+                          <span>View Pull Request #{prResult.prNumber} on GitHub</span>
+                          <ExternalLink className="size-3" />
+                        </a>
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={handleCreatePr}
+                      disabled={creatingPr}
+                      className="h-9 w-full gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-xs font-semibold text-white shadow-sm hover:from-purple-500 hover:to-indigo-500"
+                    >
+                      {creatingPr ? (
+                        <>
+                          <Loader2 className="size-3.5 animate-spin" />
+                          <span>Creating Branch & Pull Request...</span>
+                        </>
+                      ) : (
+                        <>
+                          <GitPullRequest className="size-3.5" />
+                          <span>Create GitHub PR with Fix</span>
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
             </>
           )}

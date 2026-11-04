@@ -7,6 +7,7 @@ import type {
   CreateAnalysisResponse,
   AnalysisStatusResponse,
   ArchitectureResponse,
+  CreatePullRequestResponse,
 } from "./types";
 import { http, ApiError } from "@/lib/http";
 import { stackBadgesFrom } from "@/lib/stack";
@@ -220,6 +221,12 @@ export const realApi: ApiClientContract = {
     return http.patch<Issue>(
       `/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}`,
       { status },
+    );
+  },
+
+  async createPullRequest(projectId: string, issueId: string): Promise<CreatePullRequestResponse> {
+    return http.post<CreatePullRequestResponse>(
+      `/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/create-pr`,
     );
   },
 

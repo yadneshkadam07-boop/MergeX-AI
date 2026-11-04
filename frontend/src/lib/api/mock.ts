@@ -7,6 +7,7 @@ import type {
   CreateAnalysisResponse,
   AnalysisStatusResponse,
   ArchitectureResponse,
+  CreatePullRequestResponse,
 } from "./types";
 import { INITIAL_PROJECTS, INITIAL_ANALYSIS_STEPS } from "@/mock/projects";
 import { generateIssues, generateChecklist } from "@/mock/issues";
@@ -285,6 +286,24 @@ export const mockApi: ApiClientContract = {
     }
 
     return { ...issue, status };
+  },
+
+  async createPullRequest(projectId: string, issueId: string): Promise<CreatePullRequestResponse> {
+    await delay(600, 1000);
+    const overrides = readIssueOverrides();
+    overrides[issueId] = "resolved";
+    writeIssueOverrides(overrides);
+
+    const project = await this.getProject(projectId);
+    const repoUrl = project?.repoUrl || "https://github.com/yadneshkadam07-boop/MergeX-AI";
+    const prNum = Math.floor(Math.random() * 40) + 10;
+    return {
+      prUrl: `${repoUrl}/pull/${prNum}`,
+      prNumber: prNum,
+      branch: `mergex/fix-issue-${issueId.slice(0, 6)}`,
+      status: "simulated",
+      note: "Automated PR created successfully.",
+    };
   },
 
   async getDeployChecklist(projectId: string): Promise<ChecklistItem[]> {

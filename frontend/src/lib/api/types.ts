@@ -38,6 +38,14 @@ export interface ArchitectureResponse {
   edges: ArchEdge[];
 }
 
+export interface CreatePullRequestResponse {
+  prUrl: string;
+  prNumber: number;
+  branch: string;
+  status: string;
+  note?: string;
+}
+
 export interface ApiClientContract {
   getProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | null>;
@@ -47,6 +55,7 @@ export interface ApiClientContract {
   getIssues(projectId: string, category?: IssueCategory): Promise<Issue[]>;
   getIssue(projectId: string, issueId: string): Promise<Issue | null>;
   updateIssueStatus(projectId: string, issueId: string, status: IssueStatus): Promise<Issue>;
+  createPullRequest(projectId: string, issueId: string): Promise<CreatePullRequestResponse>;
   getDeployChecklist(projectId: string): Promise<ChecklistItem[]>;
   getArchitecture(projectId: string): Promise<ArchitectureResponse>;
   getReport(projectId: string): Promise<ProjectReport>;

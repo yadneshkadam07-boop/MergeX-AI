@@ -368,3 +368,15 @@ class UserSettingsUpdate(BaseModel):
     github_username: str | None = Field(default=None, alias="githubUsername")
     checks: dict[str, bool] | None = None
     alert_severity: str | None = Field(default=None, alias="alertSeverity")
+
+
+class CreatePullRequestResponse(BaseModel):
+    """Response returned when an automated PR is created."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    pr_url: str = Field(alias="prUrl")
+    pr_number: int = Field(alias="prNumber")
+    branch: str
+    status: str
+    note: str | None = None
