@@ -21,6 +21,7 @@ Supabase pooled connection:
 
 from __future__ import annotations
 
+import re
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Any
@@ -101,11 +102,15 @@ def normalise_database_url(raw_url: str) -> DatabaseUrl:
     if not raw_url or not raw_url.strip():
         raise ValueError("DATABASE_URL must not be empty")
 
-    parts = urlsplit(raw_url.strip())
+    cleaned = raw_url.strip()
+    # Strip accidental brackets around password (e.g. copied template `:[YOUR-PASSWORD]@`)
+    cleaned = re.sub(r":\[([^\]]+)\]@", r":\1@", cleaned)
+
+    parts = urlsplit(cleaned)
     scheme = parts.scheme.lower()
 
     if not scheme.startswith(("postgres", "postgresql")):
-        return DatabaseUrl(url=raw_url.strip())
+        return DatabaseUrl(url=cleaned)
 
     connect_args: dict[str, Any] = {}
     kept_params: list[tuple[str, str]] = []
