@@ -27,7 +27,19 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Check, Eye, EyeOff, Key, Loader2, Moon, Save, Sparkles, Sun, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Eye,
+  EyeOff,
+  Key,
+  Loader2,
+  Moon,
+  Save,
+  Sparkles,
+  Sun,
+  Trash2,
+} from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { UpgradeModal } from "@/components/billing/UpgradeModal";
@@ -85,10 +97,7 @@ export function Settings() {
     setLoading(true);
     setError(null);
     try {
-      const [data, billingData] = await Promise.allSettled([
-        getSettings(),
-        getBillingStatus(),
-      ]);
+      const [data, billingData] = await Promise.allSettled([getSettings(), getBillingStatus()]);
       if (data.status === "fulfilled") {
         setSettings(data.value);
         setOriginalSettings(data.value);
@@ -592,10 +601,10 @@ export function Settings() {
                 </Badge>
               </div>
 
-              <div className="space-y-1.5 text-xs text-muted-foreground">
+              <div className="text-muted-foreground space-y-1.5 text-xs">
                 <div className="flex justify-between text-[11px]">
                   <span>Monthly Scans Consumed:</span>
-                  <span className="font-semibold text-foreground">
+                  <span className="text-foreground font-semibold">
                     {billing?.monthly_scans_used ?? 0} /{" "}
                     {billing?.max_scans === -1 ? "Unlimited" : (billing?.max_scans ?? 5)}
                   </span>
@@ -609,7 +618,8 @@ export function Settings() {
                           ? "100%"
                           : `${Math.min(
                               100,
-                              (((billing?.monthly_scans_used ?? 0) / (billing?.max_scans || 5)) * 100),
+                              ((billing?.monthly_scans_used ?? 0) / (billing?.max_scans || 5)) *
+                                100,
                             )}%`,
                     }}
                   />

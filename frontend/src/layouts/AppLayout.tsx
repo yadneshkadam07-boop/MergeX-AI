@@ -217,7 +217,7 @@ export function AppLayout() {
                   variant="outline"
                   size="sm"
                   onClick={() => setUpgradeOpen(true)}
-                  className="hidden h-8 items-center gap-1.5 border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 sm:inline-flex"
+                  className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 hidden h-8 items-center gap-1.5 text-xs font-semibold sm:inline-flex"
                 >
                   <Sparkles className="size-3.5" />
                   <span>Upgrade</span>
@@ -255,7 +255,7 @@ export function AppLayout() {
                         </p>
                         <Badge
                           variant="secondary"
-                          className="px-1.5 py-0 text-[10px] font-bold uppercase tracking-wider"
+                          className="px-1.5 py-0 text-[10px] font-bold tracking-wider uppercase"
                         >
                           {user?.tier || "free"}
                         </Badge>

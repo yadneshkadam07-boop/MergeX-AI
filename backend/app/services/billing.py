@@ -61,7 +61,17 @@ async def create_checkout_session(
     session: AsyncSession,
     settings: Settings,
 ) -> tuple[str, str]:
-    """Create a Stripe checkout session or a simulated sandbox link if keys are not set."""
+    """Create a Gumroad redirect, Stripe checkout session, or simulated link."""
+    # 1. Prefer Gumroad if configured and Stripe is not active
+    if settings.gumroad_pro_url and not settings.stripe_secret_key:
+        log.info("using_gumroad_checkout", user_id=str(user.id), plan=plan)
+        base_gumroad = settings.gumroad_pro_url.split("?")[0]
+        # Prepopulate customer's email so they don't have to retype it
+        gumroad_url = f"{base_gumroad}?email={user.email}"
+        session_id = f"gumroad_{user.id.hex[:12]}"
+        return gumroad_url, session_id
+
+    # 2. Simulated sandbox if neither is configured
     if not settings.stripe_secret_key:
         log.info("stripe_keys_missing_using_sandbox_simulation", user_id=str(user.id), plan=plan)
         # Sandbox simulated link for testing before adding live Stripe keys
@@ -190,13 +200,16 @@ async def handle_stripe_webhook(
     log.info("stripe_webhook_received", event_type=event_type)
 
     if event_type == "checkout.session.completed":
-        user_id_str = data_object.get("client_reference_id") or data_object.get("metadata", {}).get("user_id")
+        user_id_str = data_object.get("client_reference_id") or data_object.get("metadata", {}).get(
+            "user_id"
+        )
         plan = data_object.get("metadata", {}).get("plan", "pro")
         customer_id = data_object.get("customer")
         subscription_id = data_object.get("subscription")
 
         if user_id_str:
             import uuid
+
             try:
                 user_id = uuid.UUID(user_id_str)
                 user = await session.get(User, user_id)
@@ -224,3 +237,39 @@ async def handle_stripe_webhook(
                 log.info("user_downgraded_after_cancellation", user_id=str(user.id))
 
     return {"status": "processed", "type": event_type}
+
+
+async def handle_gumroad_ping(
+    payload: dict[str, Any],
+    session: AsyncSession,
+) -> bool:
+    """Handle an incoming Gumroad purchase, recurring payment, or cancellation ping."""
+    email = payload.get("email")
+    if not email:
+        log.warning("gumroad_ping_missing_email", payload=payload)
+        return False
+
+    stmt = select(User).where(User.email == str(email).strip().lower())
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        log.warning("gumroad_ping_user_not_found", email=email)
+        return False
+
+    is_cancelled = str(payload.get("cancelled", "")).lower() in ("true", "1")
+    is_refunded = str(payload.get("refunded", "")).lower() in ("true", "1")
+
+    if is_cancelled or is_refunded:
+        log.info("gumroad_subscription_cancelled_or_refunded", email=email)
+        user.tier = "free"
+    else:
+        sale_id = (
+            payload.get("sale_id") or payload.get("order_number") or f"gumroad_{user.id.hex[:8]}"
+        )
+        log.info("gumroad_subscription_activated", email=email, sale_id=sale_id)
+        user.tier = "pro"
+        user.stripe_subscription_id = str(sale_id)
+
+    await session.commit()
+    return True

@@ -18,6 +18,7 @@ export interface AppConfig {
   useMock: boolean;
   mockDelayMs: number;
   githubClientId: string;
+  gumroadProUrl: string;
   mockEndpoints: MockConfig;
 }
 
@@ -50,6 +51,7 @@ export const config: AppConfig = {
   useMock: masterUseMock,
   mockDelayMs: Number(env.VITE_MOCK_DELAY_MS) || 300,
   githubClientId: env.VITE_GITHUB_CLIENT_ID || "Ov23liBpHwSdnjI5koMF",
+  gumroadProUrl: env.VITE_GUMROAD_PRO_URL || "https://yadnesh18.gumroad.com/l/hdcpvr",
   mockEndpoints: {
     projects: parseBool(env.VITE_MOCK_PROJECTS, masterUseMock),
     issues: parseBool(env.VITE_MOCK_ISSUES, masterUseMock),

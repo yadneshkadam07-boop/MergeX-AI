@@ -55,7 +55,9 @@ class BillingStatusResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     tier: str = Field(default="free", description="Current subscription tier: free, pro, team.")
-    monthly_scans_used: int = Field(default=0, description="Number of scans used this billing cycle.")
+    monthly_scans_used: int = Field(
+        default=0, description="Number of scans used this billing cycle."
+    )
     max_scans: int = Field(
         default=5,
         description="Monthly scan cap for the current tier (-1 indicates unlimited).",

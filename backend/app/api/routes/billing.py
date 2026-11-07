@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from app.api.dependencies import CurrentUserDep, SessionDep, SettingsDep
@@ -17,6 +19,7 @@ from app.services.billing import (
     TIER_SCAN_LIMITS,
     create_checkout_session,
     create_portal_session,
+    handle_gumroad_ping,
     handle_stripe_webhook,
 )
 
@@ -61,7 +64,9 @@ async def create_checkout(
     settings: SettingsDep,
 ) -> CheckoutSessionResponse:
     """Generate a Stripe Checkout URL for Pro or Team upgrade."""
-    default_origin = settings.cors_origins[0] if settings.cors_origins else "https://merge-x-ai.vercel.app"
+    default_origin = (
+        settings.cors_origins[0] if settings.cors_origins else "https://merge-x-ai.vercel.app"
+    )
     success_url = payload.success_url or f"{default_origin}/settings"
     cancel_url = payload.cancel_url or f"{default_origin}/settings"
 
@@ -95,7 +100,9 @@ async def create_portal(
     settings: SettingsDep,
 ) -> CustomerPortalResponse:
     """Generate a Stripe Customer Portal link for managing cards and subscriptions."""
-    default_origin = settings.cors_origins[0] if settings.cors_origins else "https://merge-x-ai.vercel.app"
+    default_origin = (
+        settings.cors_origins[0] if settings.cors_origins else "https://merge-x-ai.vercel.app"
+    )
     return_url = payload.return_url or f"{default_origin}/settings"
 
     try:
@@ -133,3 +140,27 @@ async def stripe_webhook(
         settings=settings,
     )
     return {"status": result.get("status", "ok")}
+
+
+@router.post(
+    "/gumroad-ping",
+    summary="Process Gumroad purchase or cancellation webhooks",
+)
+async def gumroad_webhook_ping(
+    request: Request,
+    session: SessionDep,
+) -> dict[str, Any]:
+    """Receive and process instant subscription webhooks from Gumroad."""
+    try:
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            payload = await request.json()
+        else:
+            form = await request.form()
+            payload = dict(form)
+
+        success = await handle_gumroad_ping(payload, session)
+        return {"received": True, "processed": success}
+    except Exception as exc:
+        log.error("gumroad_ping_exception", error=str(exc))
+        return {"received": True, "error": str(exc)}

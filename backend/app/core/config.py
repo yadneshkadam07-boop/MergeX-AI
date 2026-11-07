@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
     stripe_price_id_pro: str = ""
     stripe_price_id_team: str = ""
+    gumroad_pro_url: str = "https://yadnesh18.gumroad.com/l/hdcpvr"
 
     @field_validator("cors_origins", mode="before")
     @classmethod
