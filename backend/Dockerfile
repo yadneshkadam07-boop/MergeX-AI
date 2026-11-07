@@ -57,14 +57,17 @@ COPY app ./app
 # Symlink all venv binaries to /usr/local/bin so any bare command (alembic, uvicorn, python) resolves globally
 RUN ln -sf /opt/venv/bin/* /usr/local/bin/
 
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
 # Never run the API as root: it handles untrusted repository content.
 RUN useradd --create-home --uid 10001 mergex \
     && mkdir -p /workspace \
-    && chown -R mergex:mergex /app /workspace /opt/venv
+    && chown -R mergex:mergex /app /workspace /opt/venv /start.sh
 USER mergex
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 # Render injects $PORT; default to 8000 for plain `docker run`.
-CMD ["sh", "-c", "python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["/start.sh"]
