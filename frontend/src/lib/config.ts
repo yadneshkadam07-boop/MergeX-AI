@@ -35,7 +35,7 @@ export const config: AppConfig = {
   apiBaseUrl: env.VITE_API_BASE_URL || "/api",
   useMock: masterUseMock,
   mockDelayMs: Number(env.VITE_MOCK_DELAY_MS) || 300,
-  githubClientId: env.VITE_GITHUB_CLIENT_ID || "Ov231iBpHwSdnjI5koMF",
+  githubClientId: env.VITE_GITHUB_CLIENT_ID || "Ov23liBpHwSdnjI5koMF",
   mockEndpoints: {
     projects: parseBool(env.VITE_MOCK_PROJECTS, masterUseMock),
     issues: parseBool(env.VITE_MOCK_ISSUES, masterUseMock),
