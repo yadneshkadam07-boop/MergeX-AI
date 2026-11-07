@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__
 from app.api.router import api_router
+from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.database import build_session_factory, create_engine
@@ -151,6 +152,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     if settings.api_v1_prefix != "/api":
         app.include_router(api_router, prefix="/api", include_in_schema=False)
+    # Also mount auth router at root so /auth/register and /auth/token work with or without /api prefix
+    app.include_router(auth_router, include_in_schema=False)
 
     return app
 

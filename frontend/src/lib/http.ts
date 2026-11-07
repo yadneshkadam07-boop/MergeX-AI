@@ -75,8 +75,17 @@ function buildUrl(
   // Normalize base and path
   const base = config.apiBaseUrl.replace(/\/+$/, "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  // Guard against duplicate prefix: if base ends with /api and path starts with /api/
+  let cleanPath = normalizedPath;
+  if (base.endsWith("/api") && cleanPath.startsWith("/api/")) {
+    cleanPath = cleanPath.slice(4);
+  } else if (base.endsWith("/api/v1") && cleanPath.startsWith("/api/v1/")) {
+    cleanPath = cleanPath.slice(7);
+  }
+
   const fullUrl =
-    path.startsWith("http://") || path.startsWith("https://") ? path : `${base}${normalizedPath}`;
+    path.startsWith("http://") || path.startsWith("https://") ? path : `${base}${cleanPath}`;
 
   if (!params) return fullUrl;
 
