@@ -83,6 +83,8 @@ class UserProfileOut(BaseModel):
     displayName: str = Field(description="User display name alias.")
     avatarUrl: str | None = Field(default=None, description="Avatar image URL.")
     githubUsername: str | None = Field(default=None, description="GitHub username.")
+    tier: str = Field(default="free", description="Subscription plan tier (free, pro, team).")
+    monthlyScansUsed: int = Field(default=0, alias="monthly_scans_used", description="Scans consumed.")
     createdAt: datetime | None = Field(default=None, description="Creation timestamp.")
 
 

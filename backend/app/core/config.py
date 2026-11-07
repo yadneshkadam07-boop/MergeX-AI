@@ -108,6 +108,13 @@ class Settings(BaseSettings):
     # ---- External services -------------------------------------------------
     osv_api_url: str = "https://api.osv.dev/v1/querybatch"
 
+    # ---- Stripe & Billing --------------------------------------------------
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id_pro: str = ""
+    stripe_price_id_team: str = ""
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_cors_origins(cls, value: object) -> object:

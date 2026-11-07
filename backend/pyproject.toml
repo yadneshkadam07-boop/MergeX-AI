@@ -47,6 +47,9 @@ dependencies = [
   "tree-sitter-typescript>=0.23,<0.26",
   "sqlglot>=25.30,<28.0",          # SQL migration / DDL parsing
   "packaging>=24.0",               # dependency version range comparison
+
+  # --- Billing & Subscriptions ---
+  "stripe>=7.0.0,<12.0.0",
 ]
 
 [project.optional-dependencies]

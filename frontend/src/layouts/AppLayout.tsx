@@ -14,9 +14,12 @@ import {
   Menu,
   PlusCircle,
   Settings,
+  Sparkles,
   User,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { Badge } from "@/components/ui/badge";
+import { UpgradeModal } from "@/components/billing/UpgradeModal";
 
 const NAV_ITEMS = [
   {
@@ -41,6 +44,7 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -208,6 +212,18 @@ export function AppLayout() {
 
             {/* Right: Theme Toggle & User Dropdown */}
             <div className="flex shrink-0 items-center gap-2">
+              {user?.tier !== "pro" && user?.tier !== "team" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setUpgradeOpen(true)}
+                  className="hidden h-8 items-center gap-1.5 border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 sm:inline-flex"
+                >
+                  <Sparkles className="size-3.5" />
+                  <span>Upgrade</span>
+                </Button>
+              )}
+
               <ThemeToggle />
 
               {/* User Dropdown */}
@@ -231,15 +247,37 @@ export function AppLayout() {
                 </button>
 
                 {userDropdownOpen && (
-                  <div className="bg-popover text-popover-foreground animate-in fade-in-0 zoom-in-95 absolute right-0 z-50 mt-2 w-52 rounded-md border p-1 shadow-md">
+                  <div className="bg-popover text-popover-foreground animate-in fade-in-0 zoom-in-95 absolute right-0 z-50 mt-2 w-56 rounded-md border p-1 shadow-md">
                     <div className="border-b px-3 py-2 text-xs">
-                      <p className="text-foreground truncate font-semibold">
-                        {user?.name || "MergeX Developer"}
-                      </p>
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-foreground truncate font-semibold">
+                          {user?.name || "MergeX Developer"}
+                        </p>
+                        <Badge
+                          variant="secondary"
+                          className="px-1.5 py-0 text-[10px] font-bold uppercase tracking-wider"
+                        >
+                          {user?.tier || "free"}
+                        </Badge>
+                      </div>
                       <p className="text-muted-foreground truncate">
                         {user?.email || "developer@mergex.ai"}
                       </p>
                     </div>
+
+                    {user?.tier !== "pro" && user?.tier !== "team" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          setUpgradeOpen(true);
+                        }}
+                        className="text-primary hover:bg-primary/10 flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-xs font-semibold transition-colors"
+                      >
+                        <Sparkles className="size-3.5" />
+                        <span>Upgrade to Pro ($29/mo)</span>
+                      </button>
+                    )}
 
                     <Link
                       to="/settings"
@@ -280,6 +318,13 @@ export function AppLayout() {
           </main>
         </div>
       </div>
+
+      {/* Stripe Upgrade Pricing Modal */}
+      <UpgradeModal
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        currentTier={user?.tier ?? "free"}
+      />
     </div>
   );
 }

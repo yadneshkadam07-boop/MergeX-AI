@@ -35,6 +35,8 @@ def _user_to_profile(user: User) -> UserProfileOut:
         displayName=user.display_name,
         avatarUrl=user.avatar_url,
         githubUsername=user.github_username,
+        tier=getattr(user, "tier", "free") or "free",
+        monthlyScansUsed=getattr(user, "monthly_scans_used", 0) or 0,
         createdAt=user.created_at,
     )
 

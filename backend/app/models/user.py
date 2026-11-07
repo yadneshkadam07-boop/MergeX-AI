@@ -42,6 +42,26 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         String(100),
         nullable=True,
     )
+    tier: Mapped[str] = mapped_column(
+        String(20),
+        default="free",
+        server_default="free",
+        nullable=False,
+    )
+    stripe_customer_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+    stripe_subscription_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    monthly_scans_used: Mapped[int] = mapped_column(
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
 
     projects: Mapped[list[Project]] = relationship(
         "Project",

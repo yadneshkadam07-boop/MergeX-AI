@@ -27,8 +27,12 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Check, Eye, EyeOff, Key, Moon, Save, Sun, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Eye, EyeOff, Key, Loader2, Moon, Save, Sparkles, Sun, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { Badge } from "@/components/ui/badge";
+import { UpgradeModal } from "@/components/billing/UpgradeModal";
+import { getBillingStatus, createCustomerPortalSession } from "@/lib/api/billing";
+import type { BillingStatus } from "@/types/billing";
 
 function GitHubIcon({ className }: { className?: string }) {
   return (
@@ -67,6 +71,11 @@ export function Settings() {
   const [clearDataDialogOpen, setClearDataDialogOpen] = useState(false);
   const [clearConfirmationText, setClearConfirmationText] = useState("");
 
+  // Billing & Subscriptions
+  const [billing, setBilling] = useState<BillingStatus | null>(null);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [loadingPortal, setLoadingPortal] = useState(false);
+
   // Track unsaved preferences
   const isProfileChanged =
     originalSettings &&
@@ -76,11 +85,19 @@ export function Settings() {
     setLoading(true);
     setError(null);
     try {
-      const data = await getSettings();
-      setSettings(data);
-      setOriginalSettings(data);
-      setProfileName(data.displayName);
-      setProfileEmail(data.email);
+      const [data, billingData] = await Promise.allSettled([
+        getSettings(),
+        getBillingStatus(),
+      ]);
+      if (data.status === "fulfilled") {
+        setSettings(data.value);
+        setOriginalSettings(data.value);
+        setProfileName(data.value.displayName);
+        setProfileEmail(data.value.email);
+      }
+      if (billingData.status === "fulfilled") {
+        setBilling(billingData.value);
+      }
     } catch (err) {
       console.error("Failed to load settings:", err);
       setError(err instanceof Error ? err.message : "Failed to load preferences.");
@@ -91,7 +108,25 @@ export function Settings() {
 
   useEffect(() => {
     void loadSettings();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") === "success" || params.get("simulated") === "true") {
+      toast.success("Welcome to MergeX Pro! Your plan has been activated.");
+    }
   }, []);
+
+  const handleManageBilling = async () => {
+    setLoadingPortal(true);
+    try {
+      const res = await createCustomerPortalSession();
+      if (res.portal_url) {
+        window.location.href = res.portal_url;
+      }
+    } catch (err) {
+      console.error("Portal error:", err);
+      toast.error("Could not load Stripe customer portal.");
+      setLoadingPortal(false);
+    }
+  };
 
   // Warning when leaving with unsaved profile changes
   useEffect(() => {
@@ -533,7 +568,88 @@ export function Settings() {
           </form>
         </SettingsSection>
 
-        {/* 6. Danger Zone */}
+        {/* 6. Subscription & Billing */}
+        <SettingsSection
+          title="Subscription & Billing"
+          description="Manage your MergeX AI plan, scan limits, and Stripe payment methods."
+        >
+          <div className="bg-muted/20 flex flex-col justify-between gap-6 rounded-xl border p-5 sm:flex-row sm:items-center">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-foreground text-xs font-bold">Current Plan:</span>
+                <Badge
+                  className={
+                    billing?.tier === "pro" || billing?.tier === "team"
+                      ? "bg-primary text-primary-foreground font-bold uppercase"
+                      : "bg-secondary text-secondary-foreground font-semibold uppercase"
+                  }
+                >
+                  {billing?.tier === "pro"
+                    ? "Developer Pro ($29/mo)"
+                    : billing?.tier === "team"
+                      ? "Team Plan ($99/mo)"
+                      : "Starter (Free)"}
+                </Badge>
+              </div>
+
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <div className="flex justify-between text-[11px]">
+                  <span>Monthly Scans Consumed:</span>
+                  <span className="font-semibold text-foreground">
+                    {billing?.monthly_scans_used ?? 0} /{" "}
+                    {billing?.max_scans === -1 ? "Unlimited" : (billing?.max_scans ?? 5)}
+                  </span>
+                </div>
+                <div className="bg-muted h-2 w-56 overflow-hidden rounded-full">
+                  <div
+                    className="bg-primary h-full transition-all"
+                    style={{
+                      width:
+                        billing?.max_scans === -1
+                          ? "100%"
+                          : `${Math.min(
+                              100,
+                              (((billing?.monthly_scans_used ?? 0) / (billing?.max_scans || 5)) * 100),
+                            )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <p className="text-muted-foreground text-[11px]">
+                {billing?.tier === "pro" || billing?.tier === "team"
+                  ? "Unlimited scans, 1-Click GitHub PR fixes, and private repo audits enabled."
+                  : "Upgrade to Developer Pro for unlimited scans, private repositories, and automated 1-click PR fixes."}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:items-end">
+              {billing?.has_active_subscription ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManageBilling}
+                  disabled={loadingPortal}
+                  className="gap-1.5 text-xs font-semibold"
+                >
+                  {loadingPortal && <Loader2 className="size-3.5 animate-spin" />}
+                  <span>Manage Billing & Invoices</span>
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => setUpgradeModalOpen(true)}
+                  className="gap-1.5 text-xs font-semibold shadow"
+                >
+                  <Sparkles className="size-3.5" />
+                  <span>Upgrade to Pro ($29/mo)</span>
+                </Button>
+              )}
+            </div>
+          </div>
+        </SettingsSection>
+
+        {/* 7. Danger Zone */}
         <SettingsSection
           title="Danger Zone: Local Storage Reset"
           description="Reset locally simulated projects, custom analyses, and issue resolution overrides."
@@ -625,6 +741,13 @@ export function Settings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Stripe Upgrade Pricing Modal */}
+      <UpgradeModal
+        open={upgradeModalOpen}
+        onOpenChange={setUpgradeModalOpen}
+        currentTier={billing?.tier ?? "free"}
+      />
     </div>
   );
 }

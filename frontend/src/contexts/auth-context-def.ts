@@ -6,6 +6,8 @@ export interface User {
   name: string;
   avatarUrl?: string;
   githubUsername?: string;
+  tier?: "free" | "pro" | "team";
+  monthlyScansUsed?: number;
 }
 
 export interface AuthContextType {
