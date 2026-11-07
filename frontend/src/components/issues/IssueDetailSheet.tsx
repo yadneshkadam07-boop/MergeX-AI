@@ -147,7 +147,11 @@ Please implement the exact fix in ${issue.filePath}.`;
     if (!issue || creatingPr) return;
     setCreatingPr(true);
     try {
-      const res = await createPullRequest(projectId, issue.id);
+      const savedToken =
+        typeof window !== "undefined"
+          ? sessionStorage.getItem("mergex_github_token") || undefined
+          : undefined;
+      const res = await createPullRequest(projectId, issue.id, savedToken);
       setPrResult(res);
       const updated: Issue = { ...issue, status: "resolved" };
       setIssue(updated);

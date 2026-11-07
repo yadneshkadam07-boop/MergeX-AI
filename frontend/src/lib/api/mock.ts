@@ -292,7 +292,11 @@ export const mockApi: ApiClientContract = {
     return { ...issue, status };
   },
 
-  async createPullRequest(projectId: string, issueId: string): Promise<CreatePullRequestResponse> {
+  async createPullRequest(
+    projectId: string,
+    issueId: string,
+    _githubToken?: string,
+  ): Promise<CreatePullRequestResponse> {
     await delay(600, 1000);
     const overrides = readIssueOverrides();
     overrides[issueId] = "resolved";

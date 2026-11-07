@@ -97,11 +97,15 @@ export function NewAnalysis() {
 
     setSubmitting(true);
     try {
-      const res = await createAnalysis(
-        repoUrl.trim(),
-        "main",
-        isPrivate && githubToken.trim() ? githubToken.trim() : undefined,
-      );
+      const tokenToUse = isPrivate && githubToken.trim() ? githubToken.trim() : undefined;
+      if (tokenToUse) {
+        try {
+          sessionStorage.setItem("mergex_github_token", tokenToUse);
+        } catch {
+          // ignore storage error
+        }
+      }
+      const res = await createAnalysis(repoUrl.trim(), "main", tokenToUse);
       setCurrentProject(res);
       const freshSteps = res.steps && res.steps.length > 0 ? res.steps : getAnalysisSteps();
       setSteps(freshSteps);

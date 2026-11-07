@@ -78,10 +78,11 @@ export async function updateIssueStatus(
 export async function createPullRequest(
   projectId: string,
   issueId: string,
+  githubToken?: string,
 ): Promise<CreatePullRequestResponse> {
   return isMock("issues")
-    ? mockApi.createPullRequest(projectId, issueId)
-    : realApi.createPullRequest(projectId, issueId);
+    ? mockApi.createPullRequest(projectId, issueId, githubToken)
+    : realApi.createPullRequest(projectId, issueId, githubToken);
 }
 
 export async function getDeployChecklist(projectId: string): Promise<ChecklistItem[]> {

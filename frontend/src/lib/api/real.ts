@@ -229,9 +229,19 @@ export const realApi: ApiClientContract = {
     );
   },
 
-  async createPullRequest(projectId: string, issueId: string): Promise<CreatePullRequestResponse> {
+  async createPullRequest(
+    projectId: string,
+    issueId: string,
+    githubToken?: string,
+  ): Promise<CreatePullRequestResponse> {
+    const headers: Record<string, string> = {};
+    if (githubToken) {
+      headers["X-GitHub-Token"] = githubToken;
+    }
     return http.post<CreatePullRequestResponse>(
       `/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/create-pr`,
+      {},
+      { headers },
     );
   },
 

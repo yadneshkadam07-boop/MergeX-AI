@@ -59,7 +59,11 @@ export interface ApiClientContract {
   getIssues(projectId: string, category?: IssueCategory): Promise<Issue[]>;
   getIssue(projectId: string, issueId: string): Promise<Issue | null>;
   updateIssueStatus(projectId: string, issueId: string, status: IssueStatus): Promise<Issue>;
-  createPullRequest(projectId: string, issueId: string): Promise<CreatePullRequestResponse>;
+  createPullRequest(
+    projectId: string,
+    issueId: string,
+    githubToken?: string,
+  ): Promise<CreatePullRequestResponse>;
   getDeployChecklist(projectId: string): Promise<ChecklistItem[]>;
   getArchitecture(projectId: string): Promise<ArchitectureResponse>;
   getReport(projectId: string): Promise<ProjectReport>;

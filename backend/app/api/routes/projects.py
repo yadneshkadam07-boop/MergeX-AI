@@ -13,6 +13,7 @@ from fastapi import (
     BackgroundTasks,
     File,
     Form,
+    Header,
     HTTPException,
     Request,
     UploadFile,
@@ -491,6 +492,7 @@ async def create_issue_pr(
     session: SessionDep,
     settings: SettingsDep,
     current_user: CurrentUserDep,
+    github_token_header: str | None = Header(None, alias="x-github-token"),
 ) -> CreatePullRequestResponse:
     """Create a pull request on GitHub applying the suggested fix for an issue."""
     project = await _require_project(session, project_id, current_user)
@@ -499,7 +501,7 @@ async def create_issue_pr(
     if issue is None or issue.analysis.project_id != project_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue not found.")
 
-    token = settings.github_token
+    token = github_token_header or settings.github_token
     token_str = token.get_secret_value() if hasattr(token, "get_secret_value") else str(token or "")
 
     repo_url = (
