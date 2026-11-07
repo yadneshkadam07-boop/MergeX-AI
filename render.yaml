@@ -68,8 +68,18 @@ services:
       - key: GEMINI_MAX_RETRIES
         value: "3"
 
+      # ---------- Authentication & Security -----------------------------------
+      - key: JWT_SECRET
+        generateValue: true
+
       # ---------- GitHub ------------------------------------------------------
       - key: GITHUB_TOKEN
+        sync: false
+
+      - key: GITHUB_CLIENT_ID
+        sync: false
+
+      - key: GITHUB_CLIENT_SECRET
         sync: false
 
       # ---------- Sandbox / workspace ----------------------------------------
