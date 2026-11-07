@@ -100,6 +100,23 @@ class TestCreateFromGitHub:
 
         assert response.json()["project"]["commit_sha"] == "b" * 40
 
+    def test_private_repo_token_rejected_for_free_tier(
+        self, settings: Settings, app_factory: AppFactory
+    ) -> None:
+        test_client, _ = client_with_git(settings, app_factory, FakeGit(SAMPLE_TREE))
+
+        with test_client as client:
+            response = client.post(
+                "/api/v1/projects",
+                json={
+                    "source_url": "https://github.com/owner/private-repo",
+                    "github_token": "ghp_secrettoken123",
+                },
+            )
+
+        assert response.status_code == 403
+        assert "Developer Pro" in response.json()["detail"]
+
     @pytest.mark.parametrize(
         "url",
         [

@@ -102,6 +102,17 @@ async def create_project_from_github(
     The clone is deleted before the response is sent; each analysis takes a
     fresh copy. Nothing from the repository is executed.
     """
+    if payload.github_token:
+        user_tier = getattr(current_user, "tier", "free") or "free"
+        if user_tier == "free":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Private repository scanning is a Developer Pro feature. "
+                    "Upgrade to unlock private repository audits."
+                ),
+            )
+
     try:
         outcome = await build_github_project(
             session,
@@ -111,6 +122,7 @@ async def create_project_from_github(
             source_ref=payload.source_ref,
             name=payload.name,
             user_id=current_user.id,
+            token=payload.github_token,
         )
     except InvalidGitHubUrlError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc

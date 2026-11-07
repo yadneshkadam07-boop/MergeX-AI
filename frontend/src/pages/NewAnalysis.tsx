@@ -11,6 +11,9 @@ import {
 import { isMock } from "@/lib/config";
 import { generateProjectDetails } from "@/lib/project-generator";
 import { useDocumentTitle } from "@/hooks/use-document-title";
+import { useAuth } from "@/hooks/use-auth";
+import { UpgradeModal } from "@/components/billing/UpgradeModal";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +27,7 @@ import {
   FolderGit2,
   Layers,
   Loader2,
+  Lock,
   RotateCcw,
   ShieldAlert,
   Sparkles,
@@ -37,12 +41,18 @@ const SAMPLE_REPO = "https://github.com/shadcn-ui/taxonomy";
 export function NewAnalysis() {
   const navigate = useNavigate();
   useDocumentTitle("New Analysis");
+  const { user } = useAuth();
 
   // Mode: "input" (Phase A) or "progress" (Phase B)
   const [phase, setPhase] = useState<"input" | "progress">("input");
   const [repoUrl, setRepoUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Private repository scanning (Developer Pro)
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [githubToken, setGithubToken] = useState("");
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
 
   // Phase B Live Progress state
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -87,7 +97,11 @@ export function NewAnalysis() {
 
     setSubmitting(true);
     try {
-      const res = await createAnalysis(repoUrl.trim());
+      const res = await createAnalysis(
+        repoUrl.trim(),
+        "main",
+        isPrivate && githubToken.trim() ? githubToken.trim() : undefined,
+      );
       setCurrentProject(res);
       const freshSteps = res.steps && res.steps.length > 0 ? res.steps : getAnalysisSteps();
       setSteps(freshSteps);
@@ -103,9 +117,18 @@ export function NewAnalysis() {
         // Real FastAPI analysis polling
         startRealPolling(res.analysisId, res.id, freshSteps);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Failed to start analysis:", err);
-      setError("Failed to initialize analysis. Please try again.");
+      const errObj = err as { response?: { data?: { detail?: string } }; message?: string };
+      const detail = errObj?.response?.data?.detail || errObj?.message;
+      if (typeof detail === "string" && detail.includes("Developer Pro")) {
+        setUpgradeModalOpen(true);
+        setError("Private repository scanning requires Developer Pro.");
+      } else {
+        setError(
+          typeof detail === "string" ? detail : "Failed to initialize analysis. Please try again.",
+        );
+      }
       setSubmitting(false);
     }
   };
@@ -304,6 +327,74 @@ export function NewAnalysis() {
                     <p id="repo-error" className="text-destructive text-xs font-medium">
                       {error}
                     </p>
+                  )}
+                </div>
+
+                {/* Private Repository Support */}
+                <div className="bg-muted/30 space-y-2.5 rounded-lg border p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Lock className="text-muted-foreground size-4" />
+                      <div>
+                        <span className="text-foreground text-xs font-semibold">
+                          Private Repository
+                        </span>
+                        <p className="text-muted-foreground text-[11px]">
+                          Scan proprietary code with GitHub Token
+                        </p>
+                      </div>
+                    </div>
+                    {user?.tier !== "pro" && user?.tier !== "team" ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="border-primary/40 text-primary hover:bg-primary/10 h-7 gap-1.5 text-xs font-semibold"
+                        onClick={() => setUpgradeModalOpen(true)}
+                      >
+                        <Badge
+                          variant="secondary"
+                          className="bg-primary/20 text-primary h-4 px-1.5 py-0 text-[10px]"
+                        >
+                          PRO
+                        </Badge>
+                        <span>Upgrade to Scan</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant={isPrivate ? "secondary" : "outline"}
+                        size="sm"
+                        className="h-7 text-xs font-medium"
+                        onClick={() => setIsPrivate(!isPrivate)}
+                      >
+                        {isPrivate ? "Enabled" : "Enable"}
+                      </Button>
+                    )}
+                  </div>
+
+                  {isPrivate && (
+                    <div className="animate-in fade-in-50 space-y-1.5 border-t pt-2 duration-200">
+                      <Label
+                        htmlFor="github-token"
+                        className="text-foreground text-[11px] font-medium"
+                      >
+                        GitHub Personal Access Token (PAT)
+                      </Label>
+                      <Input
+                        id="github-token"
+                        type="password"
+                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                        value={githubToken}
+                        onChange={(e) => setGithubToken(e.target.value)}
+                        className="h-8 font-mono text-xs"
+                        disabled={submitting}
+                      />
+                      <p className="text-muted-foreground text-[10px]">
+                        Requires read access to repositories. Token is used in-memory for this audit
+                        and never stored.
+                      </p>
+                    </div>
                   )}
                 </div>
 
@@ -529,6 +620,12 @@ export function NewAnalysis() {
           </CardContent>
         </Card>
       )}
+
+      <UpgradeModal
+        open={upgradeModalOpen}
+        onOpenChange={setUpgradeModalOpen}
+        currentTier={user?.tier || "free"}
+      />
     </div>
   );
 }

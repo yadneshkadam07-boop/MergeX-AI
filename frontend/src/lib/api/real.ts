@@ -182,10 +182,15 @@ export const realApi: ApiClientContract = {
     }
   },
 
-  async createAnalysis(repoUrl: string, branch = "main"): Promise<CreateAnalysisResponse> {
+  async createAnalysis(
+    repoUrl: string,
+    branch = "main",
+    githubToken?: string,
+  ): Promise<CreateAnalysisResponse> {
     return http.post<CreateAnalysisResponse>("/analyses", {
       repoUrl,
       branch,
+      ...(githubToken ? { githubToken } : {}),
     });
   },
 

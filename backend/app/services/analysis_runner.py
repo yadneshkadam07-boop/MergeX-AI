@@ -157,8 +157,16 @@ class AnalysisRunner:
             f"Importing {project.name}",
         )
 
+        token = None
+        if analysis.stack and isinstance(analysis.stack, dict):
+            token = analysis.stack.get("github_token")
+
         try:
-            async with self._import(project) as imported:
+            async with self._import(project, token=token) as imported:
+                # Sanitize token from stack so credentials are not permanently persisted
+                if analysis.stack and isinstance(analysis.stack, dict):
+                    analysis.stack.pop("github_token", None)
+
                 self.bus.publish(
                     analysis_id,
                     Stage.IMPORTING,
@@ -255,19 +263,19 @@ class AnalysisRunner:
 
     # -- dependencies -------------------------------------------------------
 
-    def _import(self, project: Project) -> Any:
+    def _import(self, project: Project, token: str | None = None) -> Any:
         """Open the project's working tree as a context manager."""
         importer = self.importer or RepoImporter(self.settings)
         if project.source_type is SourceType.GITHUB:
             if not project.source_url:  # pragma: no cover - guarded by a CHECK
                 raise ValueError("The project has no source URL to import from.")
-            token = (
+            resolved_token = token or (
                 self.settings.github_token.get_secret_value()
                 if self.settings.github_token
                 else None
             )
             repo = parse_github_url(project.source_url, ref=project.source_ref)
-            return importer.import_github(repo, token=token)
+            return importer.import_github(repo, token=resolved_token)
 
         if not project.upload_path or not Path(project.upload_path).is_file():
             raise FileNotFoundError(

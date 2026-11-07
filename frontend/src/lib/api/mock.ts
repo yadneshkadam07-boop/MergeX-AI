@@ -136,7 +136,11 @@ export const mockApi: ApiClientContract = {
     return found;
   },
 
-  async createAnalysis(repoUrl: string, branch = "main"): Promise<CreateAnalysisResponse> {
+  async createAnalysis(
+    repoUrl: string,
+    branch = "main",
+    _githubToken?: string,
+  ): Promise<CreateAnalysisResponse> {
     await delay(350, 600);
 
     const cleanUrl = repoUrl.replace(/\/+$/, "");

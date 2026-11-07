@@ -111,6 +111,7 @@ async def build_github_project(
     source_ref: str | None = None,
     name: str | None = None,
     user_id: uuid.UUID | None = None,
+    token: str | None = None,
 ) -> ImportOutcome:
     """Clone a repository, detect its stack, and add the project to ``session``.
 
@@ -119,7 +120,9 @@ async def build_github_project(
         RepoImportError: clone failed, timed out, or exceeded a limit.
     """
     repo = parse_github_url(source_url, ref=source_ref)
-    token = settings.github_token.get_secret_value() if settings.github_token else None
+    resolved_token = token or (
+        settings.github_token.get_secret_value() if settings.github_token else None
+    )
 
     project = Project(
         id=uuid.uuid4(),
@@ -130,7 +133,7 @@ async def build_github_project(
         source_ref=repo.ref,
     )
 
-    async with importer.import_github(repo, token=token) as result:
+    async with importer.import_github(repo, token=resolved_token) as result:
         # Walks the whole tree and parses every manifest: thread it so the
         # event loop stays responsive during a large import.
         stack = await to_thread.run_sync(detect_stack, result.path)

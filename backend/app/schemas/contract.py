@@ -30,6 +30,12 @@ class OneStepAnalysisCreate(BaseModel):
         default="main",
         description="Branch to inspect.",
     )
+    github_token: str | None = Field(
+        default=None,
+        alias="githubToken",
+        description="GitHub Personal Access Token for private repository access.",
+        max_length=255,
+    )
 
     @field_validator("repo_url")
     @classmethod

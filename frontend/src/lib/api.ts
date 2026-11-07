@@ -34,10 +34,11 @@ export async function getProject(id: string): Promise<Project | null> {
 export async function createAnalysis(
   repoUrl: string,
   branch?: string,
+  githubToken?: string,
 ): Promise<CreateAnalysisResponse> {
   return isMock("analysis")
-    ? mockApi.createAnalysis(repoUrl, branch)
-    : realApi.createAnalysis(repoUrl, branch);
+    ? mockApi.createAnalysis(repoUrl, branch, githubToken)
+    : realApi.createAnalysis(repoUrl, branch, githubToken);
 }
 
 export async function getAnalysisStatus(analysisId: string): Promise<AnalysisStatusResponse> {

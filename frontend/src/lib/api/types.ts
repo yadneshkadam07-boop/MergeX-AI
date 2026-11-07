@@ -49,7 +49,11 @@ export interface CreatePullRequestResponse {
 export interface ApiClientContract {
   getProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | null>;
-  createAnalysis(repoUrl: string, branch?: string): Promise<CreateAnalysisResponse>;
+  createAnalysis(
+    repoUrl: string,
+    branch?: string,
+    githubToken?: string,
+  ): Promise<CreateAnalysisResponse>;
   getAnalysisStatus(analysisId: string): Promise<AnalysisStatusResponse>;
   updateProject(id: string, updates: Partial<Project>): Promise<Project>;
   getIssues(projectId: string, category?: IssueCategory): Promise<Issue[]>;

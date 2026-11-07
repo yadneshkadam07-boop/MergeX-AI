@@ -39,6 +39,11 @@ class ProjectCreateFromGitHub(BaseModel):
         default=None,
         description="Display name. Defaults to the repository name.",
     )
+    github_token: str | None = Field(
+        default=None,
+        description="GitHub Personal Access Token for private repository access.",
+        max_length=255,
+    )
 
     @field_validator("source_url")
     @classmethod

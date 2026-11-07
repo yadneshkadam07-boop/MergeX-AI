@@ -278,6 +278,18 @@ async def create_one_step_analysis(
     Returns the initial project structure and analysis ID immediately so the
     frontend can stream progress or poll status.
     """
+    # Enforce Pro tier for private repository token scanning
+    if payload.github_token:
+        user_tier = getattr(current_user, "tier", "free") or "free"
+        if user_tier == "free":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Private repository scanning is a Developer Pro feature. "
+                    "Upgrade to unlock private repository audits."
+                ),
+            )
+
     try:
         repo = parse_github_url(payload.repo_url, ref=payload.branch)
     except InvalidGitHubUrlError as exc:
@@ -301,6 +313,7 @@ async def create_one_step_analysis(
                 source_ref=payload.branch,
                 name=repo.default_project_name,
                 user_id=current_user.id,
+                token=payload.github_token,
             )
             project = outcome.project
         except RepoTooLargeError as exc:
@@ -324,8 +337,13 @@ async def create_one_step_analysis(
         status=AnalysisStatus.PENDING,
         commit_sha=project.commit_sha,
     )
+    analysis_meta: dict[str, Any] = {}
     if payload.branch:
-        analysis.stack = {"requested_ref": payload.branch}
+        analysis_meta["requested_ref"] = payload.branch
+    if payload.github_token:
+        analysis_meta["github_token"] = payload.github_token
+    if analysis_meta:
+        analysis.stack = analysis_meta
 
     session.add(analysis)
     await session.commit()
