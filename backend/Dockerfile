@@ -54,9 +54,6 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
 
-# Symlink all venv binaries to /usr/local/bin so any bare command (alembic, uvicorn, python) resolves globally
-RUN ln -sf /opt/venv/bin/* /usr/local/bin/
-
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
