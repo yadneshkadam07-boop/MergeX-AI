@@ -109,7 +109,7 @@ async function request<T>(
 ): Promise<T> {
   const {
     params,
-    timeoutMs = 15000,
+    timeoutMs = 60000,
     skipAuth = false,
     signal: externalSignal,
     headers: customHeaders,

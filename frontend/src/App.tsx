@@ -65,6 +65,15 @@ function RouteChangeHandler() {
 }
 
 export default function App() {
+  useEffect(() => {
+    // Non-blocking pre-warm ping for cold start hosting (e.g. Render free tier)
+    try {
+      fetch("/api/health").catch(() => {});
+    } catch {
+      // Ignore background wake errors
+    }
+  }, []);
+
   return (
     <ErrorBoundary>
       <AuthProvider>

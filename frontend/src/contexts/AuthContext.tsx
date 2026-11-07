@@ -214,10 +214,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       toast.success("Signed in successfully!");
     } catch (err) {
       console.error("Authentication failed:", err);
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : "Invalid credentials. Please verify your email and password.";
+      let msg = "Invalid credentials. Please verify your email and password.";
+      if (err instanceof Error && err.message.toLowerCase().includes("timed out")) {
+        msg =
+          "The backend server is waking up from sleep (Render free tier). Please wait 10 seconds and try again.";
+      } else if (err instanceof ApiError) {
+        msg = err.message;
+      }
       toast.error(msg);
       throw err;
     } finally {

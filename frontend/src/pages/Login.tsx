@@ -22,6 +22,7 @@ export function Login() {
   const { loginWithCredentials, register, isLoading } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showWakingMessage, setShowWakingMessage] = useState(false);
   useDocumentTitle(isSignUp ? "Create an account" : "Sign in");
 
   const locationState = location.state as { from?: { pathname?: string } } | null;
@@ -66,6 +67,9 @@ export function Login() {
     e.preventDefault();
     if (validate()) {
       setIsSubmitting(true);
+      setShowWakingMessage(false);
+      const timer = setTimeout(() => setShowWakingMessage(true), 3500);
+
       void (async () => {
         try {
           if (isSignUp) {
@@ -77,6 +81,8 @@ export function Login() {
         } catch {
           // Toast handled by AuthContext
         } finally {
+          clearTimeout(timer);
+          setShowWakingMessage(false);
           setIsSubmitting(false);
         }
       })();
@@ -220,6 +226,11 @@ export function Login() {
                 </>
               )}
             </Button>
+            {showWakingMessage && (
+              <p className="text-muted-foreground animate-pulse text-center text-xs">
+                Waking server up... Render free tier instances take ~30s on cold start.
+              </p>
+            )}
           </form>
         </CardContent>
 
