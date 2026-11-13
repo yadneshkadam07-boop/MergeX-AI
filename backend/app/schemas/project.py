@@ -95,7 +95,7 @@ class DetectedStack(BaseModel):
 class ProjectRead(BaseModel):
     """A project as the API returns it."""
 
-    model_config = ConfigDict(from_attributes=True, extra="forbid")
+    model_config = ConfigDict(from_attributes=True, extra="ignore", populate_by_name=True)
 
     id: uuid.UUID
     name: str
@@ -110,6 +110,15 @@ class ProjectRead(BaseModel):
     size_bytes: int | None
     last_imported_at: datetime | None
     import_error: str | None
+
+    status: str | None = None
+    health_score: int | None = Field(default=None, alias="healthScore")
+    issue_counts: dict[str, int] | None = Field(default=None, alias="issueCounts")
+    category_scores: dict[str, int] | None = Field(default=None, alias="categoryScores")
+    severity_counts: dict[str, int] | None = Field(default=None, alias="severityCounts")
+    top_issues: list[dict[str, Any]] | None = Field(default=None, alias="topIssues")
+    scan_meta: dict[str, Any] | None = Field(default=None, alias="scanMeta")
+    stack: list[str] | None = None
 
     created_at: datetime
     updated_at: datetime

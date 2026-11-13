@@ -1,4 +1,4 @@
-import type { Project } from "@/types/project";
+import type { Project, IssueSeverity } from "@/types/project";
 import type { Issue, IssueCategory, IssueStatus, ChecklistItem } from "@/types/issue";
 import type { ProjectReport } from "@/types/report";
 import type { UserSettings } from "@/types/settings";
@@ -83,13 +83,11 @@ export function normalizeProject(raw: unknown): Project {
             ? p.created_at
             : new Date().toISOString();
 
-  const rawIssueCounts = p.issueCounts as Record<string, unknown> | undefined;
-  const rawCatScores = p.categoryScores as Record<string, unknown> | undefined;
-  const rawSevCounts = p.severityCounts as Record<string, unknown> | undefined;
-
-  const needsDetails = !rawIssueCounts || !rawCatScores || !rawSevCounts || !p.scanMeta;
-
-  const details = needsDetails ? generateProjectDetails(healthScore) : null;
+  const rawIssueCounts = (p.issueCounts || p.issue_counts) as Record<string, unknown> | undefined;
+  const rawCatScores = (p.categoryScores || p.category_scores) as Record<string, unknown> | undefined;
+  const rawSevCounts = (p.severityCounts || p.severity_counts) as Record<string, unknown> | undefined;
+  const rawTopIssues = (p.topIssues || p.top_issues) as unknown[] | undefined;
+  const rawScanMeta = (p.scanMeta || p.scan_meta) as Record<string, unknown> | undefined;
 
   const issueCounts = rawIssueCounts
     ? {
@@ -98,7 +96,12 @@ export function normalizeProject(raw: unknown): Project {
         dependencies: Number(rawIssueCounts.dependencies) || 0,
         deployment: Number(rawIssueCounts.deployment) || 0,
       }
-    : details!.issueCounts;
+    : {
+        integration: 0,
+        security: 0,
+        dependencies: 0,
+        deployment: 0,
+      };
 
   const categoryScores = rawCatScores
     ? {
@@ -107,7 +110,12 @@ export function normalizeProject(raw: unknown): Project {
         dependencies: Number(rawCatScores.dependencies) || 0,
         deployment: Number(rawCatScores.deployment) || 0,
       }
-    : details!.categoryScores;
+    : {
+        integration: 100,
+        security: 100,
+        dependencies: 100,
+        deployment: 100,
+      };
 
   const severityCounts = rawSevCounts
     ? {
@@ -116,22 +124,33 @@ export function normalizeProject(raw: unknown): Project {
         medium: Number(rawSevCounts.medium) || 0,
         low: Number(rawSevCounts.low) || 0,
       }
-    : details!.severityCounts;
+    : {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+      };
 
-  const topIssues = Array.isArray(p.topIssues)
-    ? (p.topIssues as Project["topIssues"])
-    : (details?.topIssues ?? []);
+  const topIssues = Array.isArray(rawTopIssues)
+    ? (rawTopIssues as Project["topIssues"])
+    : [];
 
-  const scanMeta =
-    p.scanMeta && typeof p.scanMeta === "object"
-      ? (p.scanMeta as Project["scanMeta"])
-      : (details?.scanMeta ?? {
+  const scanMeta: Project["scanMeta"] =
+    rawScanMeta && typeof rawScanMeta === "object"
+      ? {
+          branch: typeof rawScanMeta.branch === "string" ? rawScanMeta.branch : "main",
+          commitSha: typeof rawScanMeta.commitSha === "string" ? rawScanMeta.commitSha : "HEAD",
+          durationSeconds: Number(rawScanMeta.durationSeconds) || 0,
+          filesScanned: Number(rawScanMeta.filesScanned) || 0,
+          agentsRun: Number(rawScanMeta.agentsRun) || 4,
+        }
+      : {
           branch: typeof p.source_ref === "string" ? p.source_ref : "main",
           commitSha: typeof p.commit_sha === "string" ? p.commit_sha.slice(0, 7) : "HEAD",
           durationSeconds: 0,
           filesScanned: Number(p.file_count) || 0,
           agentsRun: 4,
-        });
+        };
 
   return {
     id,
@@ -173,7 +192,59 @@ export const realApi: ApiClientContract = {
     try {
       const response = await http.get<unknown>(`/projects/${encodeURIComponent(id)}`);
       if (!response || typeof response !== "object") return null;
-      return normalizeProject(response);
+      const project = normalizeProject(response);
+
+      const totalCount =
+        project.issueCounts.integration +
+        project.issueCounts.security +
+        project.issueCounts.dependencies +
+        project.issueCounts.deployment;
+
+      // If backend did not provide non-zero issue counts, sync with /issues
+      if (totalCount === 0 && project.status === "completed") {
+        try {
+          const issues = await http.get<Issue[]>(`/projects/${encodeURIComponent(id)}/issues`);
+          if (Array.isArray(issues) && issues.length > 0) {
+            const counts = { integration: 0, security: 0, dependencies: 0, deployment: 0 };
+            const sevs = { critical: 0, high: 0, medium: 0, low: 0 };
+            for (const iss of issues) {
+              const cat = String(iss.category);
+              if (cat === "api_contract" || cat === "schema" || cat === "integration") {
+                counts.integration++;
+              } else if (cat === "security") {
+                counts.security++;
+              } else if (cat === "dependency" || cat === "dependencies") {
+                counts.dependencies++;
+              } else if (cat === "deployment") {
+                counts.deployment++;
+              }
+              const sev = iss.severity;
+              if (sev in sevs) sevs[sev as keyof typeof sevs]++;
+            }
+            project.issueCounts = counts;
+            project.severityCounts = sevs;
+            if (project.topIssues.length === 0) {
+              project.topIssues = issues.slice(0, 5).map((i) => {
+                const catStr = String(i.category);
+                const normCat: IssueCategory =
+                  catStr === "dependency" ? "dependencies" : (i.category as IssueCategory);
+                return {
+                  id: i.id,
+                  title: i.title,
+                  category: normCat,
+                  severity: i.severity as IssueSeverity,
+                  filePath: i.filePath,
+                  shortDescription: i.shortDescription || i.title,
+                };
+              });
+            }
+          }
+        } catch {
+          // ignore issue sync error
+        }
+      }
+
+      return project;
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         return null;

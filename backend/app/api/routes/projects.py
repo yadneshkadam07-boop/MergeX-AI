@@ -250,6 +250,134 @@ async def create_demo_project(
     )
 
 
+async def _populate_project_metrics(session: SessionDep, project: Project) -> ProjectRead:
+    latest_analysis = await session.scalar(
+        select(Analysis)
+        .where(Analysis.project_id == project.id)
+        .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+        .limit(1)
+    )
+
+    status_str = "completed"
+    health_score = 100
+    issue_counts = {"integration": 0, "security": 0, "dependencies": 0, "deployment": 0}
+    cat_scores = {"integration": 100, "security": 100, "dependencies": 100, "deployment": 100}
+    sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    top_issues: list[dict[str, Any]] = []
+
+    if latest_analysis:
+        if latest_analysis.status in (AnalysisStatus.PENDING, AnalysisStatus.RUNNING):
+            status_str = "analyzing"
+        elif latest_analysis.status == AnalysisStatus.FAILED:
+            status_str = "failed"
+        elif latest_analysis.status == AnalysisStatus.SUCCEEDED:
+            status_str = "completed"
+
+        if latest_analysis.status == AnalysisStatus.SUCCEEDED and latest_analysis.category_scores:
+            cat_data = latest_analysis.category_scores or {}
+            if "score" in cat_data:
+                health_score = int(cat_data["score"])
+
+            categories = cat_data.get("categories") or {}
+            dep_count = int(categories.get("dependency", {}).get("issue_count", 0))
+            sec_count = int(categories.get("security", {}).get("issue_count", 0))
+            api_count = int(categories.get("api_contract", {}).get("issue_count", 0))
+            schema_count = int(categories.get("schema", {}).get("issue_count", 0))
+            issue_counts = {
+                "integration": api_count + schema_count,
+                "security": sec_count,
+                "dependencies": dep_count,
+                "deployment": 0,
+            }
+
+            dep_s = int(categories.get("dependency", {}).get("score", 100))
+            sec_s = int(categories.get("security", {}).get("score", 100))
+            api_s = int(categories.get("api_contract", {}).get("score", 100))
+            sch_s = int(categories.get("schema", {}).get("score", 100))
+            cat_scores = {
+                "integration": min(api_s, sch_s),
+                "security": sec_s,
+                "dependencies": dep_s,
+                "deployment": 100,
+            }
+
+            raw_sevs = cat_data.get("severity_counts") or {}
+            sev_counts = {
+                "critical": int(raw_sevs.get("critical", 0)),
+                "high": int(raw_sevs.get("high", 0)),
+                "medium": int(raw_sevs.get("medium", 0)),
+                "low": int(raw_sevs.get("low", 0)),
+            }
+
+            top_rows = (await session.scalars(
+                select(Issue)
+                .where(Issue.analysis_id == latest_analysis.id)
+                .order_by(
+                    case(
+                        {
+                            Severity.CRITICAL: 0,
+                            Severity.HIGH: 1,
+                            Severity.MEDIUM: 2,
+                            Severity.LOW: 3,
+                        },
+                        value=Issue.severity,
+                        else_=4,
+                    ),
+                    Issue.detected_by.asc(),
+                    Issue.file_path.asc(),
+                )
+                .limit(5)
+            )).all()
+
+            for iss in top_rows:
+                c_name = "dependencies" if iss.category == IssueCategory.DEPENDENCY else (
+                    "security" if iss.category == IssueCategory.SECURITY else "integration"
+                )
+                top_issues.append({
+                    "id": str(iss.id),
+                    "title": iss.title,
+                    "category": c_name,
+                    "severity": iss.severity.value if hasattr(iss.severity, "value") else str(iss.severity),
+                    "filePath": iss.file_path,
+                    "shortDescription": iss.description[:120] if iss.description else "",
+                })
+    elif project.import_error:
+        status_str = "failed"
+
+    stack_list: list[str] = []
+    if project.detected_stack:
+        for tech in project.detected_stack.get("technologies", []):
+            if isinstance(tech, dict) and tech.get("name"):
+                stack_list.append(tech["name"])
+        if not stack_list and project.detected_stack.get("frameworks"):
+            stack_list.extend(project.detected_stack.get("frameworks", []))
+    if not stack_list:
+        stack_list = ["React", "Node.js"]
+
+    duration_sec = 0
+    if latest_analysis and latest_analysis.duration_ms:
+        duration_sec = max(1, latest_analysis.duration_ms // 1000)
+
+    scan_meta = {
+        "branch": project.source_ref or "main",
+        "commitSha": (latest_analysis.commit_sha if latest_analysis and latest_analysis.commit_sha else project.commit_sha or "HEAD")[:7],
+        "durationSeconds": duration_sec,
+        "filesScanned": (latest_analysis.file_count if latest_analysis and latest_analysis.file_count else project.file_count) or 0,
+        "agentsRun": 4,
+    }
+
+    base = ProjectRead.model_validate(project)
+    base.status = status_str
+    base.health_score = health_score
+    base.issue_counts = issue_counts
+    base.category_scores = cat_scores
+    base.severity_counts = sev_counts
+    base.top_issues = top_issues
+    base.scan_meta = scan_meta
+    base.stack = stack_list
+    return base
+
+
 @router.get("", response_model=Page[ProjectRead], summary="List projects")
 async def list_projects(
     session: SessionDep,
@@ -259,13 +387,14 @@ async def list_projects(
     """Most recently created first, scoped to the authenticated user."""
     base_stmt = select(Project).where(Project.user_id == current_user.id)
     total = await session.scalar(select(func.count()).select_from(base_stmt.subquery())) or 0
-    rows = await session.scalars(
+    rows = (await session.scalars(
         base_stmt.order_by(Project.created_at.desc(), Project.id.desc())
         .limit(pagination.limit)
         .offset(pagination.offset)
-    )
+    )).all()
+    items = [await _populate_project_metrics(session, row) for row in rows]
     return Page[ProjectRead](
-        items=[ProjectRead.model_validate(row) for row in rows],
+        items=items,
         total=total,
         limit=pagination.limit,
         offset=pagination.offset,
@@ -283,7 +412,8 @@ async def get_project(
     session: SessionDep,
     current_user: CurrentUserDep,
 ) -> ProjectRead:
-    return ProjectRead.model_validate(await _require_project(session, project_id, current_user))
+    project = await _require_project(session, project_id, current_user)
+    return await _populate_project_metrics(session, project)
 
 
 @router.patch(
