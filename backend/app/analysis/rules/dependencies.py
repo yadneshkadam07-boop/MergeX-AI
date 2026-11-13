@@ -77,15 +77,28 @@ class DependencyInput:
     subdirectories: tuple[str, ...] = ()
 
 
+_LOCKFILES: Final[frozenset[str]] = frozenset(
+    {
+        "package-lock.json",
+        "npm-shrinkwrap.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "bun.lockb",
+        "bun.lock",
+    }
+)
+
+
 @dataclass(slots=True)
 class _ManifestScan:
     pinned: list[PinnedDependency] = field(default_factory=list)
     ranged_count: int = 0
     manifests: list[str] = field(default_factory=list)
+    manifest_sources: list[tuple[SourceFile, str]] = field(default_factory=list)
 
 
 async def run_dependency_rules(data: DependencyInput) -> tuple[list[Finding], str | None]:
-    """Run the dependency rule.
+    """Run the dependency rules (MX-DEP-001 and MX-DEP-002).
 
     Returns:
         ``(findings, note)``. ``note`` is a human-readable caveat when the
@@ -94,35 +107,34 @@ async def run_dependency_rules(data: DependencyInput) -> tuple[list[Finding], st
         it rather than letting an incomplete check look like a clean one.
     """
     scan = parse_dependency_manifests(data.root, subdirectories=data.subdirectories)
-
-    if not scan.pinned:
-        if scan.ranged_count:
-            return (
-                [],
-                f"No exactly-pinned dependencies to check: {scan.ranged_count} use "
-                f"version ranges, which cannot be resolved without a lockfile.",
-            )
-        return ([], None)
-
-    report = await data.client.query([dependency.query for dependency in scan.pinned])
-
-    if report.degraded and not report.findings:
-        return (
-            [],
-            f"Dependency vulnerability lookup unavailable ({report.degraded_reason}). "
-            f"{len(scan.pinned)} pinned dependencies were not checked.",
-        )
-
     findings: list[Finding] = []
-    for dependency in scan.pinned:
-        vulnerabilities = report.for_package(dependency.query)
-        if vulnerabilities:
-            findings.append(_dependency_finding(dependency, vulnerabilities))
+
+    # MX-DEP-002: Missing lockfile check
+    findings.extend(_check_missing_lockfiles(data.root, scan.manifest_sources))
 
     notes: list[str] = []
-    if report.degraded:
-        notes.append(f"the lookup was incomplete ({report.degraded_reason})")
-    if scan.ranged_count:
+
+    if scan.pinned:
+        report = await data.client.query([dependency.query for dependency in scan.pinned])
+        if report.degraded and not report.findings:
+            notes.append(
+                f"Dependency vulnerability lookup unavailable ({report.degraded_reason}). "
+                f"{len(scan.pinned)} pinned dependencies were not checked."
+            )
+        else:
+            for dependency in scan.pinned:
+                vulnerabilities = report.for_package(dependency.query)
+                if vulnerabilities:
+                    findings.append(_dependency_finding(dependency, vulnerabilities))
+            if report.degraded:
+                notes.append(f"the lookup was incomplete ({report.degraded_reason})")
+    elif scan.ranged_count:
+        notes.append(
+            f"No exactly-pinned dependencies to check: {scan.ranged_count} use "
+            f"version ranges, which cannot be resolved without a lockfile"
+        )
+
+    if scan.ranged_count and scan.pinned:
         notes.append(
             f"{scan.ranged_count} dependencies use version ranges and were skipped; "
             f"commit a lockfile to have them checked"
@@ -133,9 +145,47 @@ async def run_dependency_rules(data: DependencyInput) -> tuple[list[Finding], st
         pinned=len(scan.pinned),
         ranged=scan.ranged_count,
         vulnerable=len(findings),
-        degraded=report.degraded,
     )
     return (findings, "; ".join(notes).capitalize() + "." if notes else None)
+
+
+def _check_missing_lockfiles(
+    root: Path, manifest_sources: list[tuple[SourceFile, str]]
+) -> list[Finding]:
+    """Flag manifests that declare dependencies but lack a lockfile (MX-DEP-002)."""
+    findings: list[Finding] = []
+    for source, manifest_type in manifest_sources:
+        if manifest_type == "npm":
+            manifest_path = root / source.relative_path
+            curr_dir = manifest_path.parent
+            has_lock = False
+            while True:
+                if any((curr_dir / lock).is_file() for lock in _LOCKFILES):
+                    has_lock = True
+                    break
+                if curr_dir == root or curr_dir.parent == curr_dir:
+                    break
+                curr_dir = curr_dir.parent
+
+            if not has_lock:
+                findings.append(
+                    make_finding(
+                        "MX-DEP-002",
+                        identity=("npm", source.relative_path, "missing_lockfile"),
+                        locations=[source.location(1)],
+                        title=f"Package manifest {source.relative_path} is missing a lockfile",
+                        description=(
+                            f"{source.relative_path} declares dependencies but no lockfile "
+                            f"(package-lock.json, yarn.lock, pnpm-lock.yaml) exists in its directory or repository root. "
+                            f"Without a lockfile, CI/CD installs resolve floating versions nondeterministically."
+                        ),
+                        expected="package-lock.json, yarn.lock, or pnpm-lock.yaml committed alongside package.json",
+                        actual=f"No lockfile present for {source.relative_path}",
+                        severity=Severity.HIGH,
+                        metadata={"manifest": source.relative_path, "ecosystem": "npm"},
+                    )
+                )
+    return findings
 
 
 def _dependency_finding(
@@ -296,6 +346,7 @@ def _parse_package_json(source: SourceFile, scan: _ManifestScan) -> None:
     if not isinstance(payload, dict):
         return
 
+    has_any_deps = False
     for section in ("dependencies", "devDependencies", "optionalDependencies"):
         block = payload.get(section)
         if not isinstance(block, dict):
@@ -303,6 +354,7 @@ def _parse_package_json(source: SourceFile, scan: _ManifestScan) -> None:
         for name, raw_version in sorted(block.items()):
             if not isinstance(name, str) or not isinstance(raw_version, str):
                 continue
+            has_any_deps = True
             if _EXACT_NPM_VERSION_RE.match(raw_version.strip()):
                 scan.pinned.append(
                     PinnedDependency(
@@ -314,6 +366,9 @@ def _parse_package_json(source: SourceFile, scan: _ManifestScan) -> None:
                 )
             else:
                 scan.ranged_count += 1
+
+    if has_any_deps:
+        scan.manifest_sources.append((source, "npm"))
 
 
 def _line_of(source: SourceFile, package_name: str) -> int:

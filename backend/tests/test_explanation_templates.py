@@ -87,12 +87,20 @@ _METADATA: dict[str, dict[str, object]] = {
         "variable_count": 6,
     },
     "MX-SEC-005": {"factory": "FastAPI"},
+    "MX-SEC-006": {
+        "param": "token",
+        "sample": "?token=***",
+    },
     "MX-DEP-001": {
         "package": "PyYAML",
         "version": "5.3.1",
         "advisories": ["CVE-2020-14343"],
         "fixed_versions": ["5.4"],
         "ecosystem": "PyPI",
+    },
+    "MX-DEP-002": {
+        "manifest": "package.json",
+        "ecosystem": "npm",
     },
 }
 

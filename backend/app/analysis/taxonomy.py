@@ -254,6 +254,19 @@ REGISTRY: Final[dict[str, RuleDefinition]] = _define(
             "variables to anyone who can trigger an error."
         ),
     ),
+    RuleDefinition(
+        rule_id="MX-SEC-006",
+        title="Sensitive credential or token in URL query parameter",
+        category=IssueCategory.SECURITY,
+        default_severity=Severity.HIGH,
+        summary="An authentication token, API key, or secret is passed via a URL query parameter.",
+        rationale=(
+            "Query parameters are captured in server access logs, browser history, "
+            "referrer headers, and proxy caches. Secrets should be passed in HTTP "
+            "headers (e.g. Authorization or X-API-Key) or request bodies."
+        ),
+        base_confidence=0.9,
+    ),
     # -- Dependencies -------------------------------------------------------
     RuleDefinition(
         rule_id="MX-DEP-001",
@@ -265,6 +278,20 @@ REGISTRY: Final[dict[str, RuleDefinition]] = _define(
             "Resolved against OSV.dev, which aggregates GitHub advisories, "
             "CVEs and ecosystem databases. Severity follows the advisory."
         ),
+    ),
+    RuleDefinition(
+        rule_id="MX-DEP-002",
+        title="Package manifest missing a lockfile",
+        category=IssueCategory.DEPENDENCY,
+        default_severity=Severity.HIGH,
+        summary="A package manifest exists without an accompanying lockfile.",
+        rationale=(
+            "Without a lockfile (package-lock.json, pnpm-lock.yaml, yarn.lock, "
+            "poetry.lock), each build resolves dependencies nondeterministically. "
+            "This leads to unreproducible CI builds and vulnerability to "
+            "upstream supply-chain tampering."
+        ),
+        base_confidence=1.0,
     ),
 )
 

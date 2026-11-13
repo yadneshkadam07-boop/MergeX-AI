@@ -17,3 +17,7 @@ export async function refund(paymentId: string, amountCents: number) {
   );
   return response.data;
 }
+
+export async function getExportUrl(exportId: string, token: string) {
+  return `${API_BASE_URL}/api/payments/export?token=${token}&id=${exportId}`;
+}

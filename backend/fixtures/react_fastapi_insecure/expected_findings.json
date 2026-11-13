@@ -154,6 +154,24 @@
       ],
       "note": "Resolved against OSV.dev. Advisory IDs are indicative; the assertion should be that the package/version pair returns at least one vulnerability, not that a specific CVE id is returned, since the database is updated continuously.",
       "implemented": true
+    },
+    {
+      "rule_id": "MX-DEP-002",
+      "title": "Package manifest missing a lockfile",
+      "category": "dependency",
+      "severity": "high",
+      "file_path": "frontend/package.json",
+      "note": "frontend/package.json declares dependencies but has no lockfile.",
+      "implemented": true
+    },
+    {
+      "rule_id": "MX-SEC-006",
+      "title": "Sensitive credential or token in URL query parameter",
+      "category": "security",
+      "severity": "high",
+      "file_path": "frontend/src/api/payments.ts",
+      "note": "Sensitive token transmitted in URL query string.",
+      "implemented": true
     }
   ],
   "must_not_report": [

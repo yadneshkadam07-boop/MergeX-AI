@@ -566,6 +566,52 @@ def _dep_001(finding: Finding) -> Rendered:
     return (explanation, fix, before, after)
 
 
+def _dep_002(finding: Finding) -> Rendered:
+    metadata = finding.metadata
+    manifest = metadata.get("manifest", finding.primary_location.file_path)
+    ecosystem = metadata.get("ecosystem", "npm")
+
+    explanation = (
+        f"{manifest} declares project dependencies but has no accompanying lockfile "
+        f"(package-lock.json, yarn.lock, pnpm-lock.yaml). Without a lockfile, subsequent "
+        f"builds and deployments resolve floating or ranged version constraints dynamically, "
+        f"leading to non-reproducible releases and vulnerability to supply-chain package hijacking."
+    )
+    fix = (
+        f"At {_at(finding)}, generate a deterministic lockfile for {manifest} and commit it to version control."
+    )
+    before = f"# {manifest} has no committed lockfile"
+    after = (
+        f"# in terminal, run:\n"
+        f"npm install --package-lock-only\n"
+        f"git add package-lock.json && git commit -m 'chore: add package lockfile'"
+    )
+    return (explanation, fix, before, after)
+
+
+def _sec_006(finding: Finding) -> Rendered:
+    metadata = finding.metadata
+    param = metadata.get("param", "token")
+    sample = metadata.get("sample", f"?{param}=...")
+
+    explanation = (
+        f"Sensitive parameter '{param}' is passed in a URL query string ({sample}). "
+        f"Query parameters are routinely logged in plaintext by reverse proxies, load balancers, "
+        f"CDN edge servers, and browser history. They also leak to third-party domains via the "
+        f"HTTP 'Referer' header."
+    )
+    fix = (
+        f"Remove '{param}' from the URL query string at {_at(finding)} and transmit it using "
+        f"the HTTP 'Authorization: Bearer <token>' header or an encrypted POST body."
+    )
+    before = _first_evidence_line(finding)
+    after = (
+        f"// pass credentials via header rather than query param:\n"
+        f"headers: {{ Authorization: `Bearer ${{{param}}}` }}"
+    )
+    return (explanation, fix, before, after)
+
+
 # ---------------------------------------------------------------------------
 # Fallback
 # ---------------------------------------------------------------------------
@@ -604,5 +650,7 @@ _TEMPLATES: Final[dict[str, Callable[[Finding], Rendered]]] = {
     "MX-SEC-003": _sec_003,
     "MX-SEC-004": _sec_004,
     "MX-SEC-005": _sec_005,
+    "MX-SEC-006": _sec_006,
     "MX-DEP-001": _dep_001,
+    "MX-DEP-002": _dep_002,
 }

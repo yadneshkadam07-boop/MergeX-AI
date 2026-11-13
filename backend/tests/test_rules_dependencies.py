@@ -322,3 +322,41 @@ class TestFindingShape:
         from app.analysis.taxonomy import REGISTRY
 
         assert "MX-DEP-001" in REGISTRY
+        assert "MX-DEP-002" in REGISTRY
+
+
+class TestMissingLockfile:
+    async def test_flags_package_json_when_no_lockfile_exists(self, tmp_path: Path) -> None:
+        write(
+            tmp_path,
+            {
+                "package.json": '{"dependencies": {"react": "^18.2.0"}}',
+            },
+        )
+        findings, _ = await run_dependency_rules(DependencyInput(root=tmp_path, client=client()))
+        lock_findings = [f for f in findings if f.rule_id == "MX-DEP-002"]
+        assert len(lock_findings) == 1
+        assert lock_findings[0].primary_location.file_path == "package.json"
+
+    async def test_does_not_flag_package_json_when_lockfile_exists(self, tmp_path: Path) -> None:
+        write(
+            tmp_path,
+            {
+                "package.json": '{"dependencies": {"react": "^18.2.0"}}',
+                "package-lock.json": "{}",
+            },
+        )
+        findings, _ = await run_dependency_rules(DependencyInput(root=tmp_path, client=client()))
+        lock_findings = [f for f in findings if f.rule_id == "MX-DEP-002"]
+        assert lock_findings == []
+
+    async def test_does_not_flag_package_json_without_dependencies(self, tmp_path: Path) -> None:
+        write(
+            tmp_path,
+            {
+                "package.json": '{"name": "my-tool"}',
+            },
+        )
+        findings, _ = await run_dependency_rules(DependencyInput(root=tmp_path, client=client()))
+        lock_findings = [f for f in findings if f.rule_id == "MX-DEP-002"]
+        assert lock_findings == []

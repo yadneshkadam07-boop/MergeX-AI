@@ -512,9 +512,43 @@ class TestFindingShape:
 
     @pytest.mark.parametrize(
         "rule_id",
-        ["MX-SEC-001", "MX-SEC-002", "MX-SEC-003", "MX-SEC-004", "MX-SEC-005"],
+        ["MX-SEC-001", "MX-SEC-002", "MX-SEC-003", "MX-SEC-004", "MX-SEC-005", "MX-SEC-006"],
     )
     def test_every_rule_is_registered(self, rule_id: str) -> None:
         from app.analysis.taxonomy import REGISTRY
 
         assert rule_id in REGISTRY
+
+
+class TestSensitiveUrlParams:
+    def test_flags_token_in_url_query_string(self, tmp_path: Path) -> None:
+        write(
+            tmp_path,
+            {
+                "api.ts": 'const url = "https://example.com/api?token=secret_value_12345";\n',
+            },
+        )
+        findings = [f for f in findings_of(tmp_path) if f.rule_id == "MX-SEC-006"]
+        assert len(findings) == 1
+        assert findings[0].primary_location.file_path == "api.ts"
+        assert findings[0].severity == Severity.HIGH
+
+    def test_flags_concatenated_token_query_string(self, tmp_path: Path) -> None:
+        write(
+            tmp_path,
+            {
+                "client.js": 'const req = `${API_URL}/export?api_key=${userKey}`;\n',
+            },
+        )
+        findings = [f for f in findings_of(tmp_path) if f.rule_id == "MX-SEC-006"]
+        assert len(findings) == 1
+
+    def test_ignores_placeholders_and_comments(self, tmp_path: Path) -> None:
+        write(
+            tmp_path,
+            {
+                "client.js": '// ?token=placeholder\nconst u = "https://example.com?token=sample";\n',
+            },
+        )
+        findings = [f for f in findings_of(tmp_path) if f.rule_id == "MX-SEC-006"]
+        assert findings == []

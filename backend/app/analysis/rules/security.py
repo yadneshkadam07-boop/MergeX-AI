@@ -223,6 +223,7 @@ def run_security_rules(data: SecurityInput) -> list[Finding]:
                 continue
 
             findings.extend(_scan_for_secrets(source))
+            findings.extend(_scan_for_sensitive_url_params(source))
 
             if source.suffix in PYTHON_SUFFIXES:
                 parsed = parse_python(source)
@@ -376,6 +377,73 @@ def _scan_for_secrets(source: SourceFile) -> list[Finding]:
                 confidence=0.8,
             )
         )
+
+    return findings
+
+
+_URL_PARAM_SECRET_RE: Final[re.Pattern[str]] = re.compile(
+    r"""(?xi)
+    [?&](?P<param>access_token|auth_token|token|api_key|apikey|client_secret|secret|password|passwd)
+    =(?P<val>[A-Za-z0-9_\-\.%]{6,})
+    """
+)
+
+_URL_PARAM_CONCAT_RE: Final[re.Pattern[str]] = re.compile(
+    r"""(?xi)
+    (?:https?://|/api/|[/?&])
+    [^\s'"`]*[?&]
+    (?P<param>access_token|auth_token|token|api_key|apikey|client_secret|secret|password|passwd)=
+    (?:['"`]\s*\+|\$\{)
+    """
+)
+
+
+def _scan_for_sensitive_url_params(source: SourceFile) -> list[Finding]:
+    """MX-SEC-006: detect tokens or credentials passed via URL query parameters."""
+    findings: list[Finding] = []
+    seen_lines: set[int] = set()
+
+    for index, line in enumerate(source.lines, start=1):
+        if len(line) > 500 or index in seen_lines:
+            continue
+        stripped = line.strip()
+        if stripped.startswith(("#", "//", "/*", "*")):
+            continue
+
+        match = _URL_PARAM_SECRET_RE.search(line)
+        param_name = None
+        sample = None
+        if match:
+            val = match.group("val")
+            if not is_placeholder(val) and not val.startswith(("%s", "{", "$")):
+                param_name = match.group("param")
+                sample = mask_secret(val)
+
+        if not param_name:
+            concat_match = _URL_PARAM_CONCAT_RE.search(line)
+            if concat_match:
+                param_name = concat_match.group("param")
+                sample = f"?{param_name}=<dynamic_value>"
+
+        if param_name:
+            seen_lines.add(index)
+            findings.append(
+                make_finding(
+                    "MX-SEC-006",
+                    identity=(source.relative_path, index, param_name.lower()),
+                    locations=[source.location(index)],
+                    title=f"Sensitive parameter '{param_name}' transmitted in URL query string",
+                    description=(
+                        f"Line {index} transmits credential parameter '{param_name}' in a URL query string. "
+                        f"Query parameters are leaked across HTTP access logs, browser history, "
+                        f"Referer headers, and CDN cache layers."
+                    ),
+                    expected=f"Transmit '{param_name}' via HTTP Authorization header or request body",
+                    actual=f"Transmitted in URL query string (?{param_name}=...)",
+                    severity=Severity.HIGH,
+                    metadata={"param": param_name, "sample": sample or param_name},
+                )
+            )
 
     return findings
 
