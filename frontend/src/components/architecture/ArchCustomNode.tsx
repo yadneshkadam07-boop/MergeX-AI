@@ -62,6 +62,11 @@ function ArchCustomNodeComponent({ data, selected }: NodeProps) {
         position={Position.Left}
         className="!bg-primary border-background !size-2 border-2"
       />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!bg-primary border-background !size-2 border-2"
+      />
 
       <div className="space-y-2">
         {/* Header: Icon, Label, and Issue Count Badge */}

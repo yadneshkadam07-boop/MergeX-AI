@@ -19,42 +19,54 @@ def build_architecture_topology(
     issues: list[Issue],
 ) -> ArchitectureOut:
     """Build interactive architecture nodes and edges from detected stack and issues."""
-    detected = (analysis.stack if analysis and analysis.stack else project.detected_stack) or {}
+    # Project detected stack takes precedence since analysis.stack may only carry run metadata
+    detected = project.detected_stack or {}
+    if not detected and analysis and analysis.stack:
+        detected = analysis.stack
+
     technologies = detected.get("technologies", [])
     tech_names = [t.get("name", "") if isinstance(t, dict) else str(t) for t in technologies]
     frameworks = list(detected.get("frameworks") or [])
     all_tech = " ".join(tech_names + frameworks).lower()
 
     # Determine Frontend Tech
-    fe_tech = "React / Vite"
+    fe_tech = "React"
     if "next" in all_tech:
         fe_tech = "Next.js"
     elif "vue" in all_tech:
         fe_tech = "Vue.js"
     elif "svelte" in all_tech:
         fe_tech = "Svelte"
+    elif "webpack" in all_tech and "react" in all_tech:
+        fe_tech = "React (Webpack)"
     elif "react" in all_tech:
-        fe_tech = "React 19 / Vite"
+        fe_tech = "React / Vite"
 
     # Determine Backend Tech
-    be_tech = "FastAPI (Python)"
-    if "django" in all_tech:
-        be_tech = "Django"
-    elif "express" in all_tech:
+    be_tech = "Core API"
+    if "express" in all_tech:
         be_tech = "Express / Node.js"
+    elif "django" in all_tech:
+        be_tech = "Django"
     elif "flask" in all_tech:
         be_tech = "Flask"
     elif "fastapi" in all_tech:
         be_tech = "FastAPI (Python 3.12)"
+    elif "node" in all_tech:
+        be_tech = "Node.js"
 
     # Determine Database Tech
-    db_tech = "PostgreSQL"
-    if "sqlite" in all_tech:
+    db_tech = "Primary Datastore"
+    if "mongoose" in all_tech or "mongo" in all_tech:
+        db_tech = "MongoDB (Mongoose)"
+    elif "sqlite" in all_tech:
         db_tech = "SQLite 3"
     elif "mysql" in all_tech:
         db_tech = "MySQL 8"
-    elif "postgres" in all_tech:
-        db_tech = "PostgreSQL 16"
+    elif "postgres" in all_tech or "psql" in all_tech or "sqlalchemy" in all_tech:
+        db_tech = "PostgreSQL"
+    elif "redis" in all_tech:
+        db_tech = "Redis"
 
     # Partition issues to architecture layers
     client_issue_ids: list[str] = []
@@ -152,6 +164,12 @@ def build_architecture_topology(
         ),
     ]
 
+    db_edge_label = (
+        "Mongoose / ODM"
+        if "mongoose" in all_tech or "mongo" in all_tech
+        else ("SQLAlchemy / ORM" if "sql" in all_tech or "postgres" in all_tech else "Datastore / Query")
+    )
+
     edges = [
         ArchEdgeOut(
             id="edge_client_api",
@@ -165,7 +183,7 @@ def build_architecture_topology(
             id="edge_api_db",
             source="node_api",
             target="node_db",
-            label="SQLAlchemy / ORM",
+            label=db_edge_label,
             status=edge_api_db_status,
             issueIds=boundary_api_db_ids,
         ),
