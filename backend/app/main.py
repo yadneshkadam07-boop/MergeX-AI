@@ -147,8 +147,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     _register_exception_handlers(app)
 
     # Probes live at the root: deployment platforms should not need to know
-    # the API version prefix.
+    # the API version prefix. Also mount at /api for frontends proxying via /api prefix.
     app.include_router(health_router)
+    app.include_router(health_router, prefix="/api", include_in_schema=False)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     if settings.api_v1_prefix != "/api":
         app.include_router(api_router, prefix="/api", include_in_schema=False)
