@@ -21,9 +21,10 @@ import {
   ExternalLink,
   FolderX,
   Loader2,
+  Printer,
   RefreshCw,
 } from "lucide-react";
-import { exportReportMarkdown } from "@/lib/export-report";
+import { exportReportMarkdown, exportReportPdf } from "@/lib/export-report";
 
 export function ProjectLayout() {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +33,7 @@ export function ProjectLayout() {
   const [error, setError] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
   const [exportingReport, setExportingReport] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useDocumentTitle(project?.name, "Project");
 
@@ -133,6 +135,18 @@ export function ProjectLayout() {
     } finally {
       if (isMountedRef.current) {
         setExportingReport(false);
+      }
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (!project) return;
+    setExportingPdf(true);
+    try {
+      await exportReportPdf(project.id, project.name);
+    } finally {
+      if (isMountedRef.current) {
+        setExportingPdf(false);
       }
     }
   };
@@ -258,6 +272,26 @@ export function ProjectLayout() {
           <Button
             variant="outline"
             size="sm"
+            onClick={handleExportPdf}
+            disabled={exportingPdf || project.status === "analyzing"}
+            className="gap-1.5 text-xs font-semibold"
+          >
+            {exportingPdf ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                <span>Generating PDF...</span>
+              </>
+            ) : (
+              <>
+                <Printer className="size-3.5" />
+                <span>PDF Report</span>
+              </>
+            )}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleExportReport}
             disabled={exportingReport || project.status === "analyzing"}
             className="gap-1.5 text-xs font-semibold"
@@ -270,7 +304,7 @@ export function ProjectLayout() {
             ) : (
               <>
                 <Download className="size-3.5" />
-                <span>Export Report</span>
+                <span>Markdown</span>
               </>
             )}
           </Button>
