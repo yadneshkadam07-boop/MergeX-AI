@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     api_v1_prefix: str = "/api/v1"
     cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "https://merge-x-ai.vercel.app",
+        ]
     )
 
     # ---- Database ----------------------------------------------------------

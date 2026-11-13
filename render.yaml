@@ -82,21 +82,21 @@ services:
       - key: GITHUB_CLIENT_SECRET
         sync: false
 
-      # ---------- Stripe & Monetization --------------------------------------
+      # ---------- Stripe & Monetization (optional defaults) ------------------
       - key: STRIPE_SECRET_KEY
-        sync: false
+        value: ""
 
       - key: STRIPE_PUBLISHABLE_KEY
-        sync: false
+        value: ""
 
       - key: STRIPE_WEBHOOK_SECRET
-        sync: false
+        value: ""
 
       - key: STRIPE_PRICE_ID_PRO
-        sync: false
+        value: ""
 
       - key: STRIPE_PRICE_ID_TEAM
-        sync: false
+        value: ""
 
       # ---------- Sandbox / workspace ----------------------------------------
       # /workspace is created by the Dockerfile and owned by the mergex user.
