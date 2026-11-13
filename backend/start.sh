@@ -2,9 +2,10 @@
 set -e
 
 export PATH="/opt/venv/bin:$PATH"
+cd /app
 
 echo "==> Running Alembic migrations..."
-if /opt/venv/bin/python -m alembic upgrade head; then
+if /opt/venv/bin/python -m alembic -c /app/alembic.ini upgrade head; then
     echo "==> Alembic migrations applied successfully."
 else
     echo "==> WARNING: Alembic upgrade failed or database connection delayed. Proceeding with application startup..."
