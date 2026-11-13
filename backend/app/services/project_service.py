@@ -24,7 +24,7 @@ from app.core.logging import get_logger
 from app.models.enums import SourceType
 from app.models.project import Project
 from app.services.github import parse_github_url
-from app.services.repo_importer import ImportResult, RepoImporter
+from app.services.repo_importer import ImportResult, RepoImporter, RepoNotFoundError
 from app.services.stack_detector import StackReport, detect_stack
 
 __all__ = [
@@ -133,10 +133,24 @@ async def build_github_project(
         source_ref=repo.ref,
     )
 
-    async with importer.import_github(repo, token=resolved_token) as result:
-        # Walks the whole tree and parses every manifest: thread it so the
-        # event loop stays responsive during a large import.
-        stack = await to_thread.run_sync(detect_stack, result.path)
+    try:
+        async with importer.import_github(repo, token=resolved_token) as result:
+            # Walks the whole tree and parses every manifest: thread it so the
+            # event loop stays responsive during a large import.
+            stack = await to_thread.run_sync(detect_stack, result.path)
+    except RepoNotFoundError as exc:
+        # If a specific ref (like 'main') was requested but doesn't exist, try the default branch (ref=None)
+        if repo.ref:
+            try:
+                fallback_repo = parse_github_url(source_url, ref=None)
+                async with importer.import_github(fallback_repo, token=resolved_token) as result:
+                    stack = await to_thread.run_sync(detect_stack, result.path)
+                repo = fallback_repo
+                project.source_ref = fallback_repo.ref
+            except Exception:
+                raise exc from None
+        else:
+            raise
 
     _record_import(project, result, stack)
     session.add(project)

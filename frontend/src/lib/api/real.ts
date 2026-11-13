@@ -184,14 +184,17 @@ export const realApi: ApiClientContract = {
 
   async createAnalysis(
     repoUrl: string,
-    branch = "main",
+    branch?: string,
     githubToken?: string,
   ): Promise<CreateAnalysisResponse> {
-    return http.post<CreateAnalysisResponse>("/analyses", {
-      repoUrl,
-      branch,
-      ...(githubToken ? { githubToken } : {}),
-    });
+    const payload: Record<string, string> = { repoUrl };
+    if (branch && branch.trim()) {
+      payload.branch = branch.trim();
+    }
+    if (githubToken) {
+      payload.githubToken = githubToken;
+    }
+    return http.post<CreateAnalysisResponse>("/analyses", payload);
   },
 
   async getAnalysisStatus(analysisId: string): Promise<AnalysisStatusResponse> {

@@ -26,9 +26,9 @@ class OneStepAnalysisCreate(BaseModel):
         alias="repoUrl",
         description="GitHub repository URL.",
     )
-    branch: str = Field(
-        default="main",
-        description="Branch to inspect.",
+    branch: str | None = Field(
+        default=None,
+        description="Branch to inspect. If omitted, defaults to the repository's default branch.",
     )
     github_token: str | None = Field(
         default=None,

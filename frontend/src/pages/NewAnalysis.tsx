@@ -46,6 +46,7 @@ export function NewAnalysis() {
   // Mode: "input" (Phase A) or "progress" (Phase B)
   const [phase, setPhase] = useState<"input" | "progress">("input");
   const [repoUrl, setRepoUrl] = useState("");
+  const [branch, setBranch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -105,7 +106,7 @@ export function NewAnalysis() {
           // ignore storage error
         }
       }
-      const res = await createAnalysis(repoUrl.trim(), "main", tokenToUse);
+      const res = await createAnalysis(repoUrl.trim(), branch.trim() || undefined, tokenToUse);
       setCurrentProject(res);
       const freshSteps = res.steps && res.steps.length > 0 ? res.steps : getAnalysisSteps();
       setSteps(freshSteps);
@@ -332,6 +333,26 @@ export function NewAnalysis() {
                       {error}
                     </p>
                   )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="branch" className="text-muted-foreground text-xs font-medium">
+                      Branch / Tag / Ref (Optional)
+                    </Label>
+                    <span className="text-muted-foreground text-[10px]">
+                      Leave empty to auto-detect default branch
+                    </span>
+                  </div>
+                  <Input
+                    id="branch"
+                    type="text"
+                    placeholder="e.g. main, master, or second-edition"
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value)}
+                    className="h-8 font-mono text-xs"
+                    disabled={submitting}
+                  />
                 </div>
 
                 {/* Private Repository Support */}
