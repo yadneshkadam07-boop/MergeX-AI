@@ -60,12 +60,14 @@ function ArchCustomNodeComponent({ data, selected }: NodeProps) {
       <Handle
         type="target"
         position={Position.Left}
-        className="!bg-primary border-background !size-2 border-2"
+        id="target"
+        className="!bg-primary border-background !size-2.5 border-2"
       />
       <Handle
         type="source"
         position={Position.Right}
-        className="!bg-primary border-background !size-2 border-2"
+        id="source"
+        className="!bg-primary border-background !size-2.5 border-2"
       />
 
       <div className="space-y-2">
@@ -103,12 +105,6 @@ function ArchCustomNodeComponent({ data, selected }: NodeProps) {
           </span>
         </div>
       </div>
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-primary border-background !size-2 border-2"
-      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   MiniMap,
   Background,
   BackgroundVariant,
+  MarkerType,
   type Node,
   type Edge,
   type NodeMouseHandler,
@@ -27,7 +28,9 @@ import { useThemeColors } from "@/hooks/use-theme-colors";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { GitFork, Info } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { GitFork, Info, Layers, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 
 const nodeTypes = {
   custom: ArchCustomNode,
@@ -114,23 +117,31 @@ export function ProjectArchitecture() {
       const isWarning = edge.status === "warning";
       const hasProblems = isBroken || isWarning;
 
-      // Color and stroke dashes based on status using brand tokens
-      let strokeColor = themeColors.success;
-      if (isBroken) strokeColor = themeColors.sevCritical;
-      else if (isWarning) strokeColor = themeColors.sevMedium;
+      // Robust high-contrast stroke color ensuring solid rendering in SVG
+      let strokeColor = "#10b981"; // Healthy emerald
+      if (isBroken) strokeColor = "#ef4444"; // Critical red
+      else if (isWarning) strokeColor = "#f59e0b"; // Medium amber
 
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        sourceHandle: "source",
+        targetHandle: "target",
         label: edge.label,
         type: "smoothstep",
         animated: isBroken,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: strokeColor,
+          width: 14,
+          height: 14,
+        },
         style: {
           stroke: strokeColor,
-          strokeWidth: isBroken ? 2.5 : 2,
+          strokeWidth: isBroken ? 3 : 2,
           strokeDasharray: isBroken ? "6,6" : isWarning ? "4,4" : undefined,
-          opacity: onlyProblems && !hasProblems ? 0.2 : 1,
+          opacity: onlyProblems && !hasProblems ? 0.25 : 1,
         },
         labelStyle: {
           fontSize: 10,
@@ -146,7 +157,16 @@ export function ProjectArchitecture() {
         labelBgBorderRadius: 4,
       };
     });
-  }, [archData.edges, onlyProblems, themeColors]);
+  }, [archData.edges, onlyProblems]);
+
+  const brokenEdgesCount = useMemo(
+    () => archData.edges.filter((e) => e.status === "broken").length,
+    [archData.edges],
+  );
+  const warningEdgesCount = useMemo(
+    () => archData.edges.filter((e) => e.status === "warning").length,
+    [archData.edges],
+  );
 
   // Node and Edge click handlers
   const handleNodeClick: NodeMouseHandler = useCallback(
@@ -231,6 +251,75 @@ export function ProjectArchitecture() {
           </Label>
         </div>
       </div>
+
+      {/* Architecture System Summary Card */}
+      <Card className="bg-card border shadow-xs">
+        <CardContent className="space-y-3 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
+            <div className="flex items-center gap-2">
+              <Layers className="text-primary size-4" />
+              <h3 className="text-foreground text-sm font-semibold">
+                System Topology & Boundary Summary
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              {brokenEdgesCount > 0 ? (
+                <Badge
+                  variant="outline"
+                  className="border-sev-critical bg-sev-critical/12 text-sev-critical text-xs"
+                >
+                  <XCircle className="mr-1 size-3" /> {brokenEdgesCount} Broken Contract
+                  {brokenEdgesCount > 1 ? "s" : ""}
+                </Badge>
+              ) : warningEdgesCount > 0 ? (
+                <Badge
+                  variant="outline"
+                  className="border-sev-medium bg-sev-medium/12 text-sev-medium text-xs"
+                >
+                  <AlertTriangle className="mr-1 size-3" /> {warningEdgesCount} Schema Warning
+                  {warningEdgesCount > 1 ? "s" : ""}
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-success bg-success/12 text-success text-xs"
+                >
+                  <CheckCircle2 className="mr-1 size-3" /> Boundaries Healthy
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 pt-1 md:grid-cols-3">
+            {archData.nodes.map((node) => {
+              const nodeIssues = openIssues.filter((i) => node.issueIds.includes(i.id));
+              const critCount = nodeIssues.filter(
+                (i) => i.severity === "critical" || i.severity === "high",
+              ).length;
+              return (
+                <div key={node.id} className="bg-muted/30 space-y-1.5 rounded-lg border p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-foreground font-semibold">{node.label}</span>
+                    <Badge variant="secondary" className="px-1 py-0 font-mono text-[10px] uppercase">
+                      {node.kind}
+                    </Badge>
+                  </div>
+                  <p className="text-primary font-mono text-xs">{node.tech}</p>
+                  <p className="text-muted-foreground line-clamp-1 text-[11px]">{node.description}</p>
+                  <div className="text-muted-foreground flex items-center justify-between pt-1 text-[11px]">
+                    <span>
+                      {nodeIssues.length} issue{nodeIssues.length === 1 ? "" : "s"} attached
+                    </span>
+                    {critCount > 0 && (
+                      <span className="text-sev-critical font-bold">{critCount} high-risk</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Legend */}
       <div className="bg-muted/30 text-muted-foreground flex flex-wrap items-center gap-4 rounded-lg border px-3.5 py-2 text-xs">

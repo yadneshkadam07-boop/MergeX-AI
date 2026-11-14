@@ -77,6 +77,24 @@ def build_project_executive_report(
     st_dep = "⚠️ Updates Recommended" if dep_count > 0 else "✅ Up to Date"
     st_dpl = "⚠️ Configuration Warnings" if deploy_count > 0 else "✅ Ready"
 
+    # Detected stack summary
+    detected_stack = project.detected_stack or {}
+    fe_techs = ", ".join(detected_stack.get("frontend") or []) or "Web Client"
+    be_techs = ", ".join(detected_stack.get("backend") or []) or "REST API"
+    db_techs = ", ".join(detected_stack.get("database") or []) or "Datastore"
+    build_techs = ", ".join(detected_stack.get("build") or []) or "Standard"
+
+    # Risk summary qualitative narrative
+    risk_narrative = []
+    if crit_count > 0:
+        risk_narrative.append(f"**{crit_count} critical defect(s)** pose immediate deployment or security barriers.")
+    if dep_count > 0:
+        risk_narrative.append(f"**Supply chain audit** uncovered {dep_count} package vulnerability/hygiene issue(s).")
+    if int_count > 0:
+        risk_narrative.append(f"**Cross-layer boundary checks** identified {int_count} route contract or schema inconsistency item(s).")
+    if sec_count > 0:
+        risk_narrative.append(f"**Security scanners** flagged {sec_count} exposure(s) requiring remediation.")
+
     exec_summary_md = f"""## Executive Summary
 
 MergeX AI conducted an automated multi-layer contract analysis across **{file_count} files**
@@ -86,6 +104,14 @@ for **{project.name}** (commit `{commit_sha}`).
 - **Scan Duration:** {duration_s}s
 - **Total Findings:** {tot_issues} {breakdown_counts}
 
+### Architectural Stack Profile
+- **Frontend Layer:** {fe_techs}
+- **API Gateway:** {be_techs}
+- **Data Persistence:** {db_techs}
+- **Build / Bundler:** {build_techs}
+
+### Diagnostic Synthesis
+{" ".join(risk_narrative) if risk_narrative else "All automated compatibility, security, and dependency checks passed cleanly."}
 The automated inspection verified compatibility across frontend clients, backend API routing,
 database schema definitions, and deployment configuration.
 """

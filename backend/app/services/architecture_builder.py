@@ -24,26 +24,42 @@ def build_architecture_topology(
     if not detected and analysis and analysis.stack:
         detected = analysis.stack
 
+    fe_list = detected.get("frontend") or []
+    be_list = detected.get("backend") or []
+    db_list = detected.get("database") or []
+    build_list = detected.get("build") or []
     technologies = detected.get("technologies", [])
     tech_names = [t.get("name", "") if isinstance(t, dict) else str(t) for t in technologies]
     frameworks = list(detected.get("frameworks") or [])
-    all_tech = " ".join(tech_names + frameworks).lower()
+    signals = [
+        s.get("technology", "")
+        for s in detected.get("signals", [])
+        if isinstance(s, dict)
+    ]
+    pkg_mgrs = detected.get("package_managers") or []
+    source_str = f"{getattr(project, 'source_url', '') or ''} {project.name or ''}"
+
+    all_tech = " ".join(
+        fe_list + be_list + db_list + build_list + tech_names + frameworks + signals + pkg_mgrs + [source_str]
+    ).lower()
 
     # Determine Frontend Tech
-    fe_tech = "React"
-    if "next" in all_tech:
+    fe_tech = fe_list[0] if fe_list else "Web Client"
+    if "webpack" in all_tech and "react" in all_tech:
+        fe_tech = "React (Webpack)"
+    elif "next" in all_tech:
         fe_tech = "Next.js"
     elif "vue" in all_tech:
         fe_tech = "Vue.js"
     elif "svelte" in all_tech:
         fe_tech = "Svelte"
-    elif "webpack" in all_tech and "react" in all_tech:
-        fe_tech = "React (Webpack)"
-    elif "react" in all_tech:
+    elif "vite" in all_tech and "react" in all_tech:
         fe_tech = "React / Vite"
+    elif "react" in all_tech:
+        fe_tech = "React"
 
     # Determine Backend Tech
-    be_tech = "Core API"
+    be_tech = be_list[0] if be_list else "API Gateway"
     if "express" in all_tech:
         be_tech = "Express / Node.js"
     elif "django" in all_tech:
@@ -51,19 +67,21 @@ def build_architecture_topology(
     elif "flask" in all_tech:
         be_tech = "Flask"
     elif "fastapi" in all_tech:
-        be_tech = "FastAPI (Python 3.12)"
+        be_tech = "FastAPI (Python)"
+    elif "nest" in all_tech:
+        be_tech = "NestJS"
     elif "node" in all_tech:
         be_tech = "Node.js"
 
     # Determine Database Tech
-    db_tech = "Primary Datastore"
+    db_tech = db_list[0] if db_list else "Primary Store"
     if "mongoose" in all_tech or "mongo" in all_tech:
         db_tech = "MongoDB (Mongoose)"
     elif "sqlite" in all_tech:
         db_tech = "SQLite 3"
     elif "mysql" in all_tech:
-        db_tech = "MySQL 8"
-    elif "postgres" in all_tech or "psql" in all_tech or "sqlalchemy" in all_tech:
+        db_tech = "MySQL"
+    elif "postgres" in all_tech or "psql" in all_tech:
         db_tech = "PostgreSQL"
     elif "redis" in all_tech:
         db_tech = "Redis"

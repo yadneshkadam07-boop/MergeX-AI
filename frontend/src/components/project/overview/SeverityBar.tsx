@@ -18,19 +18,16 @@ export function SeverityBar({ counts, className }: SeverityBarProps) {
       return "All security, integration, and deployment checks passed with zero flagged issues.";
     }
 
-    const parts: string[] = [];
     if (counts.critical > 0) {
-      parts.push(`${counts.critical} critical`);
+      return `${counts.critical} critical and ${counts.high} high-severity findings require remediation before production release.`;
     }
     if (counts.high > 0) {
-      parts.push(`${counts.high} high`);
+      return `${counts.high} high-severity findings detected across security, dependencies, and integration boundaries.`;
     }
-
-    if (parts.length > 0) {
-      return `${parts.join(" and ")} issues need attention before deployment.`;
+    if (counts.medium > 0) {
+      return `${counts.medium} medium and ${counts.low} low priority maintenance items identified across the codebase.`;
     }
-
-    return `${counts.medium} medium and ${counts.low} low priority issues detected across code.`;
+    return `${counts.low} low priority advisory finding detected across the codebase.`;
   };
 
   return (

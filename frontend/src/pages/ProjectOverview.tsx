@@ -1,6 +1,7 @@
 import { useProject } from "@/hooks/use-project";
 import { ScoreRing } from "@/components/project/overview/ScoreRing";
 import { SeverityBar } from "@/components/project/overview/SeverityBar";
+import { ProjectSummaryCard } from "@/components/project/overview/ProjectSummaryCard";
 import { CategoryCards } from "@/components/project/overview/CategoryCards";
 import { PriorityIssuesList } from "@/components/project/overview/PriorityIssuesList";
 import { ProjectInfoCards } from "@/components/project/overview/ProjectInfoCards";
@@ -62,13 +63,16 @@ export function ProjectOverview() {
         </CardContent>
       </Card>
 
-      {/* 2. Category cards (4 cards linking to tabs) */}
+      {/* 2. Executive Synthesis Card */}
+      <ProjectSummaryCard project={project} />
+
+      {/* 3. Category cards (4 cards linking to tabs) */}
       <CategoryCards categoryScores={project.categoryScores} issueCounts={project.issueCounts} />
 
-      {/* 3. Priority issues list */}
+      {/* 4. Priority issues list */}
       <PriorityIssuesList issues={project.topIssues} />
 
-      {/* 4. Two info cards side by side (Stack + Scan details) */}
+      {/* 5. Two info cards side by side (Stack + Scan details) */}
       <ProjectInfoCards
         stack={project.stack}
         scanMeta={project.scanMeta}
