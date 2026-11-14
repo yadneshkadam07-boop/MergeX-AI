@@ -82,7 +82,7 @@ export function ProjectTabs({ issueCounts }: ProjectTabsProps) {
   });
 
   return (
-    <div className="bg-background/95 sticky top-16 z-20 -mx-4 border-b px-4 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+    <div className="-mx-4 border-b px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
       <div
         ref={containerRef}
         className="no-scrollbar flex items-center gap-1.5 overflow-x-auto scroll-smooth py-2"
