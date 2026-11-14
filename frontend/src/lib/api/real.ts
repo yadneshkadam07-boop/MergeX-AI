@@ -186,7 +186,54 @@ export const realApi: ApiClientContract = {
     } else {
       return [];
     }
-    return items.map(normalizeProject);
+    const projects = items.map(normalizeProject);
+
+    // Sync issue counts in parallel for completed projects if backend returned zero
+    await Promise.all(
+      projects.map(async (project) => {
+        const totalCount =
+          project.issueCounts.integration +
+          project.issueCounts.security +
+          project.issueCounts.dependencies +
+          project.issueCounts.deployment;
+
+        if (totalCount === 0 && project.status === "completed") {
+          try {
+            const issues = await http.get<Issue[]>(`/projects/${encodeURIComponent(project.id)}/issues`);
+            if (Array.isArray(issues) && issues.length > 0) {
+              const counts = { integration: 0, security: 0, dependencies: 0, deployment: 0 };
+              const sevs = { critical: 0, high: 0, medium: 0, low: 0 };
+              for (const iss of issues) {
+                const cat = String(iss.category);
+                if (cat === "api_contract" || cat === "schema" || cat === "integration") {
+                  counts.integration++;
+                } else if (cat === "security") {
+                  counts.security++;
+                } else if (cat === "dependency" || cat === "dependencies") {
+                  counts.dependencies++;
+                } else if (cat === "deployment") {
+                  counts.deployment++;
+                }
+                const sev = iss.severity;
+                if (sev in sevs) sevs[sev as keyof typeof sevs]++;
+              }
+              project.issueCounts = counts;
+              project.severityCounts = sevs;
+              if (project.healthScore === 70 || project.healthScore === 100) {
+                project.healthScore = Math.max(
+                  0,
+                  100 - (sevs.critical * 15 + sevs.high * 8 + sevs.medium * 3 + sevs.low * 1),
+                );
+              }
+            }
+          } catch {
+            // ignore issue sync error
+          }
+        }
+      }),
+    );
+
+    return projects;
   },
 
   async getProject(id: string): Promise<Project | null> {

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { HealthScoreBadge } from "@/components/shared/HealthScoreBadge";
 import { StatusBadge } from "@/components/shared/StatusBadge";
-import { formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime } from "@/lib/utils";
 import { GitBranch, Clock } from "lucide-react";
 
 interface ProjectCardProps {
@@ -13,6 +13,11 @@ interface ProjectCardProps {
 
 export function ProjectCard({ project }: ProjectCardProps) {
   const { issueCounts } = project;
+  const totalIssues =
+    (issueCounts.integration || 0) +
+    (issueCounts.security || 0) +
+    (issueCounts.dependencies || 0) +
+    (issueCounts.deployment || 0);
 
   return (
     <Link
@@ -53,39 +58,76 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
           {/* Health score and metrics */}
           <div className="flex items-center justify-between border-t border-dashed pt-3">
-            <span className="text-muted-foreground text-xs font-medium">Health Score</span>
+            <span className="text-foreground text-xs font-semibold">Health Score</span>
             {project.status === "analyzing" ? (
               <span className="text-muted-foreground font-mono text-xs italic">Evaluating...</span>
             ) : (
-              <HealthScoreBadge score={project.healthScore} className="shrink-0" />
+              <div className="flex items-center gap-2">
+                {totalIssues > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="border-sev-critical/30 bg-sev-critical/10 text-sev-critical font-mono text-[11px] font-bold px-1.5 py-0"
+                  >
+                    {totalIssues} issue{totalIssues === 1 ? "" : "s"}
+                  </Badge>
+                )}
+                <HealthScoreBadge score={project.healthScore} className="shrink-0" />
+              </div>
             )}
           </div>
 
           {/* 4 category issue breakdown numbers */}
-          <div className="bg-muted/40 grid grid-cols-4 gap-1.5 rounded-lg border p-2 text-center">
-            <div className="min-w-0 space-y-0.5">
-              <div className="text-foreground font-mono text-xs font-bold">
+          <div className="bg-muted/50 dark:bg-muted/20 grid grid-cols-4 gap-1 rounded-lg border p-2 text-center">
+            {/* Integration */}
+            <div className="min-w-0 space-y-1 py-0.5">
+              <div
+                className={cn(
+                  "font-mono text-sm font-extrabold tracking-tight",
+                  issueCounts.integration > 0 ? "text-sev-medium" : "text-foreground",
+                )}
+              >
                 {issueCounts.integration}
               </div>
-              <div className="text-muted-foreground truncate text-[10px]">Integr.</div>
+              <div className="text-muted-foreground truncate text-[10px] font-medium">Integr.</div>
             </div>
-            <div className="min-w-0 space-y-0.5">
-              <div className="text-foreground font-mono text-xs font-bold">
+
+            {/* Security */}
+            <div className="min-w-0 space-y-1 py-0.5 border-l border-border/50">
+              <div
+                className={cn(
+                  "font-mono text-sm font-extrabold tracking-tight",
+                  issueCounts.security > 0 ? "text-sev-critical" : "text-foreground",
+                )}
+              >
                 {issueCounts.security}
               </div>
-              <div className="text-muted-foreground truncate text-[10px]">Secur.</div>
+              <div className="text-muted-foreground truncate text-[10px] font-medium">Secur.</div>
             </div>
-            <div className="min-w-0 space-y-0.5">
-              <div className="text-foreground font-mono text-xs font-bold">
+
+            {/* Dependencies */}
+            <div className="min-w-0 space-y-1 py-0.5 border-l border-border/50">
+              <div
+                className={cn(
+                  "font-mono text-sm font-extrabold tracking-tight",
+                  issueCounts.dependencies > 0 ? "text-sev-critical" : "text-foreground",
+                )}
+              >
                 {issueCounts.dependencies}
               </div>
-              <div className="text-muted-foreground truncate text-[10px]">Dep.</div>
+              <div className="text-muted-foreground truncate text-[10px] font-medium">Dep.</div>
             </div>
-            <div className="min-w-0 space-y-0.5">
-              <div className="text-foreground font-mono text-xs font-bold">
+
+            {/* Deployment */}
+            <div className="min-w-0 space-y-1 py-0.5 border-l border-border/50">
+              <div
+                className={cn(
+                  "font-mono text-sm font-extrabold tracking-tight",
+                  issueCounts.deployment > 0 ? "text-sev-medium" : "text-foreground",
+                )}
+              >
                 {issueCounts.deployment}
               </div>
-              <div className="text-muted-foreground truncate text-[10px]">Deploy</div>
+              <div className="text-muted-foreground truncate text-[10px] font-medium">Deploy</div>
             </div>
           </div>
 
