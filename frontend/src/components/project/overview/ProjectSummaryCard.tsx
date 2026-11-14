@@ -186,13 +186,13 @@ export function ProjectSummaryCard({ project }: ProjectSummaryCardProps) {
 
           <div className="flex items-center gap-2 shrink-0">
             <Button asChild size="sm" variant="default" className="text-xs h-8">
-              <Link to={`/projects/${project.id}/architecture`}>
+              <Link to={`/project/${project.id}/architecture`}>
                 <span>View Architecture</span>
                 <ArrowRight className="ml-1 size-3.5" />
               </Link>
             </Button>
             <Button asChild size="sm" variant="outline" className="text-xs h-8">
-              <Link to={`/projects/${project.id}/docs`}>
+              <Link to={`/project/${project.id}/docs`}>
                 <span>View Full Report</span>
               </Link>
             </Button>

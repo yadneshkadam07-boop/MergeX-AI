@@ -66,7 +66,7 @@ export function AppLayout() {
     if (path.startsWith("/dashboard")) return "Dashboard";
     if (path.startsWith("/analyze")) return "New Analysis";
     if (path.startsWith("/settings")) return "Settings";
-    if (path.startsWith("/project/")) {
+    if (path.startsWith("/project/") || path.startsWith("/projects/")) {
       const parts = path.split("/").filter(Boolean);
       const projectId = parts[1] || "";
       const sub = parts[2]

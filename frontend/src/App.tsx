@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -64,6 +64,12 @@ function RouteChangeHandler() {
   return null;
 }
 
+function ProjectsRedirect() {
+  const location = useLocation();
+  const target = location.pathname.replace(/^\/projects\//, "/project/");
+  return <Navigate to={`${target}${location.search}${location.hash}`} replace />;
+}
+
 export default function App() {
   useEffect(() => {
     // Non-blocking pre-warm ping for cold start hosting (e.g. Render free tier)
@@ -105,6 +111,11 @@ export default function App() {
                     <Route path="architecture" element={<ProjectArchitecture />} />
                     <Route path="docs" element={<ProjectDocs />} />
                   </Route>
+
+                  {/* Canonical redirects for plural /projects routes */}
+                  <Route path="/projects" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/projects/:id" element={<ProjectsRedirect />} />
+                  <Route path="/projects/:id/*" element={<ProjectsRedirect />} />
                 </Route>
               </Route>
 
