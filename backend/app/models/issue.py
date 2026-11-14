@@ -109,3 +109,8 @@ class Issue(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     def score_penalty(self) -> int:
         """Health-score points this issue costs."""
         return self.severity.score_penalty
+
+    @property
+    def line_number(self) -> int | None:
+        """Alias for line_start for convenience across patch and PR generators."""
+        return self.line_start

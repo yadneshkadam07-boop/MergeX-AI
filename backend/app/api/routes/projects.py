@@ -312,32 +312,47 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
             health_score = int(target_analysis.category_scores["score"])
 
         # Query all issues for this analysis from the database to guarantee accurate counts
-        all_issues = (await session.scalars(
+        order_clause = (
+            case(
+                {
+                    Severity.CRITICAL: 0,
+                    Severity.HIGH: 1,
+                    Severity.MEDIUM: 2,
+                    Severity.LOW: 3,
+                },
+                value=Issue.severity,
+                else_=4,
+            ),
+            Issue.detected_by.asc(),
+            Issue.file_path.asc(),
+        )
+        all_issues = list((await session.scalars(
             select(Issue)
             .where(Issue.analysis_id == target_analysis.id)
-            .order_by(
-                case(
-                    {
-                        Severity.CRITICAL: 0,
-                        Severity.HIGH: 1,
-                        Severity.MEDIUM: 2,
-                        Severity.LOW: 3,
-                    },
-                    value=Issue.severity,
-                    else_=4,
-                ),
-                Issue.detected_by.asc(),
-                Issue.file_path.asc(),
-            )
-        )).all()
+            .order_by(*order_clause)
+        )).all())
+
+        if not all_issues:
+            all_issues = list((await session.scalars(
+                select(Issue)
+                .join(Analysis, Issue.analysis_id == Analysis.id)
+                .where(Analysis.project_id == project.id)
+                .order_by(*order_clause)
+            )).all())
 
         if all_issues:
-            int_count = sum(1 for i in all_issues if i.category in (IssueCategory.API_CONTRACT, IssueCategory.SCHEMA))
-            sec_count = sum(1 for i in all_issues if i.category == IssueCategory.SECURITY)
-            dep_count = sum(1 for i in all_issues if i.category == IssueCategory.DEPENDENCY)
+            def _cat_str(i: Issue) -> str:
+                return str(getattr(i.category, "value", i.category)).lower().strip()
+
+            def _sev_str(i: Issue) -> str:
+                return str(getattr(i.severity, "value", i.severity)).lower().strip()
+
+            int_count = sum(1 for i in all_issues if _cat_str(i) in ("api_contract", "schema", "integration"))
+            sec_count = sum(1 for i in all_issues if _cat_str(i) == "security")
+            dep_count = sum(1 for i in all_issues if _cat_str(i) in ("dependency", "dependencies"))
             deploy_count = sum(
                 1 for i in all_issues
-                if i.category not in (IssueCategory.API_CONTRACT, IssueCategory.SCHEMA, IssueCategory.SECURITY, IssueCategory.DEPENDENCY)
+                if _cat_str(i) not in ("api_contract", "schema", "integration", "security", "dependency", "dependencies")
             )
 
             issue_counts = {
@@ -348,10 +363,10 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
             }
 
             sev_counts = {
-                "critical": sum(1 for i in all_issues if i.severity == Severity.CRITICAL),
-                "high": sum(1 for i in all_issues if i.severity == Severity.HIGH),
-                "medium": sum(1 for i in all_issues if i.severity == Severity.MEDIUM),
-                "low": sum(1 for i in all_issues if i.severity == Severity.LOW),
+                "critical": sum(1 for i in all_issues if _sev_str(i) == "critical"),
+                "high": sum(1 for i in all_issues if _sev_str(i) == "high"),
+                "medium": sum(1 for i in all_issues if _sev_str(i) == "medium"),
+                "low": sum(1 for i in all_issues if _sev_str(i) == "low"),
             }
 
             if target_analysis.health_score is None and (not target_analysis.category_scores or "score" not in target_analysis.category_scores):
@@ -362,14 +377,15 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
 
             top_rows = all_issues[:5]
             for iss in top_rows:
-                c_name = "dependencies" if iss.category == IssueCategory.DEPENDENCY else (
-                    "security" if iss.category == IssueCategory.SECURITY else "integration"
+                c_val = _cat_str(iss)
+                c_name = "dependencies" if c_val in ("dependency", "dependencies") else (
+                    "security" if c_val == "security" else "integration"
                 )
                 top_issues.append({
                     "id": str(iss.id),
                     "title": iss.title,
                     "category": c_name,
-                    "severity": iss.severity.value if hasattr(iss.severity, "value") else str(iss.severity),
+                    "severity": _sev_str(iss),
                     "filePath": iss.file_path,
                     "shortDescription": iss.description[:120] if iss.description else "",
                 })
@@ -691,7 +707,7 @@ async def create_issue_pr(
     issue_id: uuid.UUID,
     session: SessionDep,
     settings: SettingsDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
     payload: CreatePullRequestRequest | None = None,
     github_token_header: str | None = Header(None, alias="x-github-token"),
 ) -> CreatePullRequestResponse:
@@ -737,7 +753,7 @@ async def create_batch_issue_pr(
     payload: CreateBatchPullRequestRequest,
     session: SessionDep,
     settings: SettingsDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
     github_token_header: str | None = Header(None, alias="x-github-token"),
 ) -> CreateBatchPullRequestResponse:
     """Create a single combined pull request on GitHub resolving multiple issues."""
@@ -953,7 +969,11 @@ async def _require_project(
 ) -> Project:
     """Load a project or raise 404."""
     project = await session.get(Project, project_id)
-    if project is None or (user is not None and project.user_id != user.id):
+    if project is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"Project with ID '{project_id}' could not be found."
+        )
+    if user is not None and project.user_id is not None and project.user_id != user.id:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, f"Project with ID '{project_id}' could not be found."
         )

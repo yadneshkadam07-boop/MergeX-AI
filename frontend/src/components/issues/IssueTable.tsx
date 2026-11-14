@@ -25,6 +25,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createBatchPullRequest } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -341,7 +342,13 @@ export function IssueTable({
       }
     } catch (err) {
       console.error("Failed to create batch pull request:", err);
-      toast.error("Failed to create Consolidated Pull Request. Please verify your token permissions.");
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to create Consolidated Pull Request.";
+      toast.error(msg);
     } finally {
       setCreatingBatchPr(false);
     }

@@ -197,7 +197,7 @@ export const realApi: ApiClientContract = {
           project.issueCounts.dependencies +
           project.issueCounts.deployment;
 
-        if (totalCount === 0 && project.status === "completed") {
+        if (totalCount === 0 && project.status !== "failed") {
           try {
             const rawIssues = await http.get<unknown>(`/projects/${encodeURIComponent(project.id)}/issues`);
             const issues: Issue[] = Array.isArray(rawIssues)

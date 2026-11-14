@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Issue, IssueStatus } from "@/types/issue";
 import { getIssue, updateIssueStatus, createPullRequest } from "@/lib/api";
+import { ApiError } from "@/lib/http";
 import type { CreatePullRequestResponse } from "@/lib/api/types";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -231,7 +232,13 @@ Please implement the exact fix in ${issue.filePath}.`;
       }
     } catch (err) {
       console.error("Failed to create pull request:", err);
-      toast.error("Failed to create GitHub Pull Request. Please verify your token permissions.");
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to create GitHub Pull Request.";
+      toast.error(msg);
     } finally {
       setCreatingPr(false);
     }
