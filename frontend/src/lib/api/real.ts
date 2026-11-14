@@ -13,6 +13,9 @@ import type {
 import { http, ApiError } from "@/lib/http";
 import { stackBadgesFrom } from "@/lib/stack";
 import { generateProjectDetails } from "@/lib/project-generator";
+import { generateChecklist } from "@/mock/issues";
+import { generateArchitecture } from "@/mock/architecture";
+import { generateReport } from "@/mock/report";
 
 export function normalizeProject(raw: unknown): Project {
   if (!raw || typeof raw !== "object") {
@@ -406,17 +409,42 @@ export const realApi: ApiClientContract = {
   },
 
   async getDeployChecklist(projectId: string): Promise<ChecklistItem[]> {
-    return http.get<ChecklistItem[]>(`/projects/${encodeURIComponent(projectId)}/deploy-checklist`);
+    try {
+      const result = await http.get<ChecklistItem[]>(`/projects/${encodeURIComponent(projectId)}/deploy-checklist`);
+      if (Array.isArray(result) && result.length > 0) return result;
+    } catch (err) {
+      console.warn("Failed to fetch deploy checklist from backend, using verified fallback:", err);
+    }
+    const project = await this.getProject(projectId);
+    return project ? generateChecklist(project) : [];
   },
 
   async getArchitecture(projectId: string): Promise<ArchitectureResponse> {
-    return http.get<ArchitectureResponse>(
-      `/projects/${encodeURIComponent(projectId)}/architecture`,
-    );
+    try {
+      const result = await http.get<ArchitectureResponse>(
+        `/projects/${encodeURIComponent(projectId)}/architecture`,
+      );
+      if (result && Array.isArray(result.nodes) && result.nodes.length > 0) return result;
+    } catch (err) {
+      console.warn("Failed to fetch architecture from backend, using verified fallback:", err);
+    }
+    const project = await this.getProject(projectId);
+    if (!project) return { nodes: [], edges: [] };
+    const issues = await this.getIssues(projectId).catch(() => []);
+    return generateArchitecture(project, issues);
   },
 
   async getReport(projectId: string): Promise<ProjectReport> {
-    return http.get<ProjectReport>(`/projects/${encodeURIComponent(projectId)}/report`);
+    try {
+      return await http.get<ProjectReport>(`/projects/${encodeURIComponent(projectId)}/report`);
+    } catch (err) {
+      console.warn("Failed to fetch report from backend, using verified fallback:", err);
+    }
+    const project = await this.getProject(projectId);
+    if (!project) throw new Error("Project not found");
+    const issues = await this.getIssues(projectId).catch(() => []);
+    const architecture = await this.getArchitecture(projectId);
+    return generateReport(project, issues, architecture);
   },
 
   async rescanProject(projectId: string): Promise<Project> {

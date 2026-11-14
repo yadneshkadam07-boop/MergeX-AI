@@ -496,7 +496,7 @@ async def list_projects(
 async def get_project(
     project_id: uuid.UUID,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
 ) -> ProjectRead:
     project = await _require_project(session, project_id, current_user)
     return await _populate_project_metrics(session, project)
@@ -560,7 +560,7 @@ async def delete_project(
 async def list_project_issues(
     project_id: uuid.UUID,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
     category: str | None = None,
     severity: str | None = None,
     status: str | None = None,
@@ -657,7 +657,7 @@ async def get_project_issue(
     project_id: uuid.UUID,
     issue_id: uuid.UUID,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
 ) -> ProjectIssueOut:
     """Retrieve a single issue by ID for a project."""
     await _require_project(session, project_id, current_user)
@@ -865,7 +865,7 @@ async def rescan_project(
 async def get_project_report(
     project_id: uuid.UUID,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
 ) -> ProjectReportOut:
     """Generate or retrieve the structured multi-section Markdown report."""
     project = await _require_project(session, project_id, current_user)
@@ -911,7 +911,7 @@ async def get_project_report(
 async def get_project_deploy_checklist(
     project_id: uuid.UUID,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
 ) -> list[ChecklistItemOut]:
     """Return deployment checklist items derived from the latest findings."""
     project = await _require_project(session, project_id, current_user)
@@ -941,7 +941,7 @@ async def get_project_deploy_checklist(
 async def get_project_architecture(
     project_id: uuid.UUID,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
 ) -> ArchitectureOut:
     """Return interactive architecture nodes and edges with attached findings."""
     project = await _require_project(session, project_id, current_user)

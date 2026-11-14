@@ -24,12 +24,20 @@ export function ProjectDeploy() {
     setLoading(true);
     setError(null);
     try {
-      const [issueData, checklistData] = await Promise.all([
+      const [issueRes, checklistRes] = await Promise.allSettled([
         getIssues(project.id, "deployment"),
         getDeployChecklist(project.id),
       ]);
+
+      const issueData = issueRes.status === "fulfilled" ? issueRes.value : [];
+      const checklistData = checklistRes.status === "fulfilled" ? checklistRes.value : [];
+
       setIssues(issueData);
       setChecklist(checklistData);
+
+      if (checklistRes.status === "rejected" && issueRes.status === "rejected") {
+        setError("Unable to retrieve deployment findings. Please check your network connection.");
+      }
     } catch (err) {
       console.error("Failed to load deploy data:", err);
       setError(err instanceof Error ? err.message : "Failed to load deployment verification.");
