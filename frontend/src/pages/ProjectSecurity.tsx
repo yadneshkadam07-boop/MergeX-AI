@@ -137,8 +137,14 @@ export function ProjectSecurity() {
       ) : (
         <IssueTable
           issues={filteredIssues}
+          projectId={project?.id}
           loading={loading}
           onSelect={handleSelectIssue}
+          onIssuesResolved={(resolvedIds) => {
+            setIssues((prev) =>
+              prev.map((i) => (resolvedIds.includes(i.id) ? { ...i, status: "resolved" } : i))
+            );
+          }}
           extraHeaderLabel="CWE / OWASP"
           renderExtraCell={(issue) => {
             if (!issue.meta?.security?.cwe && !issue.meta?.security?.owaspCategory) {

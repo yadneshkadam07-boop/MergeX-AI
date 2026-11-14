@@ -154,3 +154,4 @@ def resolve_target_file_path(
         return "Dockerfile"
 
     return "remediation.patch"
+

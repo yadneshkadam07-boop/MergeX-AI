@@ -114,3 +114,4 @@ def test_resolve_target_file_path():
     assert resolve_target_file_path(None, "MX-SEC-004") == ".env.example"
     assert resolve_target_file_path("Project tree", "MX-DEP-001") == "Dockerfile"
     assert resolve_target_file_path(None, "MX-GENERIC") == "remediation.patch"
+

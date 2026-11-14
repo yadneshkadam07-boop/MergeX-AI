@@ -8,6 +8,7 @@ import type {
   AnalysisStatusResponse,
   ArchitectureResponse,
   CreatePullRequestResponse,
+  CreateBatchPullRequestResponse,
 } from "./types";
 import { INITIAL_PROJECTS, INITIAL_ANALYSIS_STEPS } from "@/mock/projects";
 import { generateIssues, generateChecklist } from "@/mock/issues";
@@ -311,6 +312,26 @@ export const mockApi: ApiClientContract = {
       branch: `mergex/fix-issue-${issueId.slice(0, 6)}`,
       status: "simulated",
       note: "Automated PR created successfully.",
+    };
+  },
+
+  async createBatchPullRequest(
+    projectId: string,
+    issueIds: string[],
+    _githubToken?: string,
+  ): Promise<CreateBatchPullRequestResponse> {
+    await delay(300, 600);
+    const project = await this.getProject(projectId);
+    const repoUrl = project?.repoUrl || "https://github.com/yadneshkadam07-boop/MergeX-AI";
+    const prNum = Math.floor(Math.random() * 40) + 100;
+    const branch = `mergex/batch-remediation-${Date.now().toString(36).slice(-6)}`;
+    return {
+      prUrl: `${repoUrl}/pull/${prNum}`,
+      prNumber: prNum,
+      branch,
+      status: "simulated",
+      resolvedIssueIds: issueIds,
+      note: "Automated consolidated batch PR created successfully.",
     };
   },
 

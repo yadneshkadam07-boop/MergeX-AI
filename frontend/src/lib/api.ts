@@ -14,6 +14,7 @@ import type {
   AnalysisStatusResponse,
   ArchitectureResponse,
   CreatePullRequestResponse,
+  CreateBatchPullRequestResponse,
 } from "./api/types";
 import { isMock } from "./config";
 import { mockApi } from "./api/mock";
@@ -83,6 +84,16 @@ export async function createPullRequest(
   return isMock("issues")
     ? mockApi.createPullRequest(projectId, issueId, githubToken)
     : realApi.createPullRequest(projectId, issueId, githubToken);
+}
+
+export async function createBatchPullRequest(
+  projectId: string,
+  issueIds: string[],
+  githubToken?: string,
+): Promise<CreateBatchPullRequestResponse> {
+  return isMock("issues")
+    ? mockApi.createBatchPullRequest(projectId, issueIds, githubToken)
+    : realApi.createBatchPullRequest(projectId, issueIds, githubToken);
 }
 
 export async function getDeployChecklist(projectId: string): Promise<ChecklistItem[]> {

@@ -8,6 +8,7 @@ import type {
   AnalysisStatusResponse,
   ArchitectureResponse,
   CreatePullRequestResponse,
+  CreateBatchPullRequestResponse,
 } from "./types";
 import { http, ApiError } from "@/lib/http";
 import { stackBadgesFrom } from "@/lib/stack";
@@ -315,6 +316,22 @@ export const realApi: ApiClientContract = {
     return http.post<CreatePullRequestResponse>(
       `/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/create-pr`,
       { githubToken },
+      { headers },
+    );
+  },
+
+  async createBatchPullRequest(
+    projectId: string,
+    issueIds: string[],
+    githubToken?: string,
+  ): Promise<CreateBatchPullRequestResponse> {
+    const headers: Record<string, string> = {};
+    if (githubToken) {
+      headers["X-GitHub-Token"] = githubToken;
+    }
+    return http.post<CreateBatchPullRequestResponse>(
+      `/projects/${encodeURIComponent(projectId)}/create-batch-pr`,
+      { issueIds, githubToken },
       { headers },
     );
   },

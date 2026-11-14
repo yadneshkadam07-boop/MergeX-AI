@@ -48,6 +48,8 @@ from app.schemas.common import (
 from app.schemas.contract import (
     ArchitectureOut,
     ChecklistItemOut,
+    CreateBatchPullRequestRequest,
+    CreateBatchPullRequestResponse,
     CreatePullRequestRequest,
     CreatePullRequestResponse,
     IssueStatusUpdate,
@@ -68,7 +70,10 @@ from app.services.architecture_builder import build_architecture_topology
 from app.services.demo import DEMO_FIXTURE, DemoUnavailableError, pack_demo_archive
 from app.services.deploy_checklist_builder import build_deploy_checklist
 from app.services.github import InvalidGitHubUrlError
-from app.services.github_pr import create_pull_request_for_issue
+from app.services.github_pr import (
+    create_batch_pull_request,
+    create_pull_request_for_issue,
+)
 from app.services.project_service import (
     ImportOutcome,
     UploadTooLargeError,
@@ -637,13 +642,7 @@ async def create_issue_pr(
     token = explicit_token or settings.github_token
     token_str = token.get_secret_value() if hasattr(token, "get_secret_value") else str(token or "")
 
-    repo_url = (
-        project.source_url or project.repo_url
-        if hasattr(project, "source_url")
-        else (project.repo_url or "")
-    )
-    if not repo_url:
-        repo_url = "https://github.com/yadneshkadam07-boop/MergeX-AI"
+    repo_url = getattr(project, "source_url", None) or "https://github.com/yadneshkadam07-boop/MergeX-AI"
 
     res = await create_pull_request_for_issue(
         token=token_str if token_str else None,
@@ -659,6 +658,67 @@ async def create_issue_pr(
         pr_number=res["prNumber"],
         branch=res["branch"],
         status=res.get("status", "created"),
+        note=res.get("note"),
+    )
+
+
+@router.post(
+    "/{project_id}/create-batch-pr",
+    response_model=CreateBatchPullRequestResponse,
+    summary="Create consolidated GitHub Pull Request for multiple issues",
+    responses=NOT_FOUND_RESPONSE,
+)
+async def create_batch_issue_pr(
+    project_id: uuid.UUID,
+    payload: CreateBatchPullRequestRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+    current_user: CurrentUserDep,
+    github_token_header: str | None = Header(None, alias="x-github-token"),
+) -> CreateBatchPullRequestResponse:
+    """Create a single combined pull request on GitHub resolving multiple issues."""
+    project = await _require_project(session, project_id, current_user)
+
+    if not payload.issue_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "No issues provided for batch PR.")
+
+    stmt = (
+        select(Issue)
+        .join(Issue.analysis)
+        .where(
+            Analysis.project_id == project_id,
+            Issue.id.in_(payload.issue_ids),
+        )
+    )
+    result = await session.scalars(stmt)
+    issues = list(result.all())
+
+    if not issues:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No matching issues found for this project.")
+
+    explicit_token = payload.github_token or github_token_header
+    token = explicit_token or settings.github_token
+    token_str = token.get_secret_value() if hasattr(token, "get_secret_value") else str(token or "")
+
+    repo_url = getattr(project, "source_url", None) or "https://github.com/yadneshkadam07-boop/MergeX-AI"
+
+    res = await create_batch_pull_request(
+        token=token_str if token_str else None,
+        repo_url=repo_url,
+        issues=issues,
+    )
+
+    for iss in issues:
+        iss.status = IssueStatus.RESOLVED
+
+    await session.flush()
+
+    return CreateBatchPullRequestResponse(
+        pr_url=res["prUrl"],
+        pr_number=res["prNumber"],
+        branch=res["branch"],
+        status=res.get("status", "created"),
+        resolved_issue_ids=res.get("resolvedIssueIds", [str(i.id) for i in issues]),
         note=res.get("note"),
     )
 

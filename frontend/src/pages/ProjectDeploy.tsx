@@ -204,8 +204,14 @@ export function ProjectDeploy() {
 
             <IssueTable
               issues={filteredIssues}
+              projectId={project?.id}
               loading={loading}
               onSelect={handleSelectIssue}
+              onIssuesResolved={(resolvedIds) => {
+                setIssues((prev) =>
+                  prev.map((i) => (resolvedIds.includes(i.id) ? { ...i, status: "resolved" } : i))
+                );
+              }}
               emptyTitle="No deployment blockers found"
               emptyDescription="Container files and environment manifests are ready for production release."
             />

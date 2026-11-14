@@ -147,8 +147,14 @@ export function ProjectIntegration() {
       ) : (
         <IssueTable
           issues={filteredIssues}
+          projectId={project?.id}
           loading={loading}
           onSelect={handleSelectIssue}
+          onIssuesResolved={(resolvedIds) => {
+            setIssues((prev) =>
+              prev.map((i) => (resolvedIds.includes(i.id) ? { ...i, status: "resolved" } : i))
+            );
+          }}
           extraHeaderLabel="Contract Pair"
           renderExtraCell={(issue) => {
             if (!issue.meta?.integration)

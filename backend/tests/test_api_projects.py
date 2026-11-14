@@ -450,3 +450,45 @@ def test_fixture_repo_imports_cleanly_as_a_zip(
     assert stack["backend"] == ["FastAPI"]
     assert stack["frontend_roots"] == ["frontend"]
     assert stack["backend_roots"] == ["backend"]
+
+
+def test_create_batch_pr_endpoint(client: TestClient, fixture_repo: Callable[[str], Path]) -> None:
+    """Verify batch PR creation resolves issues and returns PR details."""
+    root = fixture_repo("react_fastapi_mismatch")
+    members = {
+        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+    create_resp = client.post(
+        "/api/v1/projects/upload",
+        files={"file": ("mismatch.zip", make_zip(members), "application/zip")},
+    )
+    assert create_resp.status_code == 201
+    project_id = create_resp.json()["project"]["id"]
+
+    # Trigger analysis so issues are populated
+    analysis_resp = client.post(f"/api/v1/projects/{project_id}/rescan")
+    assert analysis_resp.status_code == 200
+
+    # Get issues
+    issues_resp = client.get(f"/api/v1/projects/{project_id}/issues")
+    assert issues_resp.status_code == 200
+    data = issues_resp.json()
+    issues = data.get("items", []) if isinstance(data, dict) else data
+    if not issues:
+        return
+
+    issue_ids = [iss["id"] for iss in issues[:3]]
+    batch_resp = client.post(
+        f"/api/v1/projects/{project_id}/create-batch-pr",
+        json={"issueIds": issue_ids},
+    )
+    assert batch_resp.status_code == 200
+    data = batch_resp.json()
+    assert "prUrl" in data
+    assert "prNumber" in data
+    assert "branch" in data
+    assert len(data["resolvedIssueIds"]) == len(issue_ids)
+

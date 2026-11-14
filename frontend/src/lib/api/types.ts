@@ -46,6 +46,15 @@ export interface CreatePullRequestResponse {
   note?: string;
 }
 
+export interface CreateBatchPullRequestResponse {
+  prUrl: string;
+  prNumber: number;
+  branch: string;
+  status: string;
+  resolvedIssueIds: string[];
+  note?: string;
+}
+
 export interface ApiClientContract {
   getProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | null>;
@@ -64,6 +73,11 @@ export interface ApiClientContract {
     issueId: string,
     githubToken?: string,
   ): Promise<CreatePullRequestResponse>;
+  createBatchPullRequest(
+    projectId: string,
+    issueIds: string[],
+    githubToken?: string,
+  ): Promise<CreateBatchPullRequestResponse>;
   getDeployChecklist(projectId: string): Promise<ChecklistItem[]>;
   getArchitecture(projectId: string): Promise<ArchitectureResponse>;
   getReport(projectId: string): Promise<ProjectReport>;

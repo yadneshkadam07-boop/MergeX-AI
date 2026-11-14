@@ -394,3 +394,25 @@ class CreatePullRequestResponse(BaseModel):
     branch: str
     status: str
     note: str | None = None
+
+
+class CreateBatchPullRequestRequest(BaseModel):
+    """Payload for creating a consolidated batch pull request."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    issue_ids: list[uuid.UUID] = Field(alias="issueIds")
+    github_token: str | None = Field(default=None, alias="githubToken")
+
+
+class CreateBatchPullRequestResponse(BaseModel):
+    """Response returned when an automated batch PR is created."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    pr_url: str = Field(alias="prUrl")
+    pr_number: int = Field(alias="prNumber")
+    branch: str
+    status: str
+    resolved_issue_ids: list[str] = Field(default_factory=list, alias="resolvedIssueIds")
+    note: str | None = None

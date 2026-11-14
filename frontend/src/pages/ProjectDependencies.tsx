@@ -138,8 +138,14 @@ export function ProjectDependencies() {
       ) : (
         <IssueTable
           issues={filteredIssues}
+          projectId={project?.id}
           loading={loading}
           onSelect={handleSelectIssue}
+          onIssuesResolved={(resolvedIds) => {
+            setIssues((prev) =>
+              prev.map((i) => (resolvedIds.includes(i.id) ? { ...i, status: "resolved" } : i))
+            );
+          }}
           extraHeaderLabel="Package & CVE"
           renderExtraCell={(issue) => {
             if (!issue.meta?.dependencies)
