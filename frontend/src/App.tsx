@@ -64,12 +64,6 @@ function RouteChangeHandler() {
   return null;
 }
 
-function ProjectsRedirect() {
-  const location = useLocation();
-  const target = location.pathname.replace(/^\/projects\//, "/project/");
-  return <Navigate to={`${target}${location.search}${location.hash}`} replace />;
-}
-
 export default function App() {
   useEffect(() => {
     // Non-blocking pre-warm ping for cold start hosting (e.g. Render free tier)
@@ -112,10 +106,19 @@ export default function App() {
                     <Route path="docs" element={<ProjectDocs />} />
                   </Route>
 
-                  {/* Canonical redirects for plural /projects routes */}
+                  {/* Also directly mount under plural /projects/:id for 100% resilient routing */}
+                  <Route path="/projects/:id" element={<ProjectLayout />}>
+                    <Route index element={<ProjectOverview />} />
+                    <Route path="integration" element={<ProjectIntegration />} />
+                    <Route path="security" element={<ProjectSecurity />} />
+                    <Route path="dependencies" element={<ProjectDependencies />} />
+                    <Route path="deploy" element={<ProjectDeploy />} />
+                    <Route path="architecture" element={<ProjectArchitecture />} />
+                    <Route path="docs" element={<ProjectDocs />} />
+                  </Route>
+
+                  {/* Canonical redirects for plural /projects root */}
                   <Route path="/projects" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/projects/:id" element={<ProjectsRedirect />} />
-                  <Route path="/projects/:id/*" element={<ProjectsRedirect />} />
                 </Route>
               </Route>
 
