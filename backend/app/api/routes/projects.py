@@ -264,6 +264,26 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
         .limit(1)
     )
 
+    # Find the most recent succeeded analysis for robust metrics calculation
+    latest_succeeded = latest_analysis if (
+        latest_analysis
+        and (
+            latest_analysis.status == AnalysisStatus.SUCCEEDED
+            or str(getattr(latest_analysis.status, "value", latest_analysis.status)).lower() == "succeeded"
+        )
+    ) else None
+
+    if latest_succeeded is None:
+        latest_succeeded = await session.scalar(
+            select(Analysis)
+            .where(
+                Analysis.project_id == project.id,
+                Analysis.status == AnalysisStatus.SUCCEEDED,
+            )
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(1)
+        )
+
     status_str = "completed"
     health_score = 100
     issue_counts = {"integration": 0, "security": 0, "dependencies": 0, "deployment": 0}
@@ -272,114 +292,119 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
     top_issues: list[dict[str, Any]] = []
 
     if latest_analysis:
-        if latest_analysis.status in (AnalysisStatus.PENDING, AnalysisStatus.RUNNING):
+        status_val = str(getattr(latest_analysis.status, "value", latest_analysis.status)).lower()
+        if status_val in ("pending", "running"):
             status_str = "analyzing"
-        elif latest_analysis.status == AnalysisStatus.FAILED:
+        elif status_val == "failed" and latest_succeeded is None:
             status_str = "failed"
-        elif latest_analysis.status == AnalysisStatus.SUCCEEDED:
+        else:
             status_str = "completed"
+    elif project.import_error:
+        status_str = "failed"
 
-        if latest_analysis.status == AnalysisStatus.SUCCEEDED:
-            # First, check health_score on the analysis model
-            if latest_analysis.health_score is not None:
-                health_score = int(latest_analysis.health_score)
-            elif latest_analysis.category_scores and "score" in latest_analysis.category_scores:
-                health_score = int(latest_analysis.category_scores["score"])
+    # Populate findings and score from the latest succeeded analysis (or latest if none succeeded)
+    target_analysis = latest_succeeded or latest_analysis
+    if target_analysis:
+        # Check explicit health_score on the analysis model
+        if target_analysis.health_score is not None:
+            health_score = int(target_analysis.health_score)
+        elif target_analysis.category_scores and "score" in target_analysis.category_scores:
+            health_score = int(target_analysis.category_scores["score"])
 
-            # Query all issues for this analysis from the database to guarantee accurate counts
-            all_issues = (await session.scalars(
-                select(Issue)
-                .where(Issue.analysis_id == latest_analysis.id)
-                .order_by(
-                    case(
-                        {
-                            Severity.CRITICAL: 0,
-                            Severity.HIGH: 1,
-                            Severity.MEDIUM: 2,
-                            Severity.LOW: 3,
-                        },
-                        value=Issue.severity,
-                        else_=4,
-                    ),
-                    Issue.detected_by.asc(),
-                    Issue.file_path.asc(),
+        # Query all issues for this analysis from the database to guarantee accurate counts
+        all_issues = (await session.scalars(
+            select(Issue)
+            .where(Issue.analysis_id == target_analysis.id)
+            .order_by(
+                case(
+                    {
+                        Severity.CRITICAL: 0,
+                        Severity.HIGH: 1,
+                        Severity.MEDIUM: 2,
+                        Severity.LOW: 3,
+                    },
+                    value=Issue.severity,
+                    else_=4,
+                ),
+                Issue.detected_by.asc(),
+                Issue.file_path.asc(),
+            )
+        )).all()
+
+        if all_issues:
+            int_count = sum(1 for i in all_issues if i.category in (IssueCategory.API_CONTRACT, IssueCategory.SCHEMA))
+            sec_count = sum(1 for i in all_issues if i.category == IssueCategory.SECURITY)
+            dep_count = sum(1 for i in all_issues if i.category == IssueCategory.DEPENDENCY)
+            deploy_count = sum(
+                1 for i in all_issues
+                if i.category not in (IssueCategory.API_CONTRACT, IssueCategory.SCHEMA, IssueCategory.SECURITY, IssueCategory.DEPENDENCY)
+            )
+
+            issue_counts = {
+                "integration": int_count,
+                "security": sec_count,
+                "dependencies": dep_count,
+                "deployment": deploy_count,
+            }
+
+            sev_counts = {
+                "critical": sum(1 for i in all_issues if i.severity == Severity.CRITICAL),
+                "high": sum(1 for i in all_issues if i.severity == Severity.HIGH),
+                "medium": sum(1 for i in all_issues if i.severity == Severity.MEDIUM),
+                "low": sum(1 for i in all_issues if i.severity == Severity.LOW),
+            }
+
+            if target_analysis.health_score is None and (not target_analysis.category_scores or "score" not in target_analysis.category_scores):
+                health_score = max(
+                    0,
+                    100 - (sev_counts["critical"] * 15 + sev_counts["high"] * 8 + sev_counts["medium"] * 3 + sev_counts["low"] * 1),
                 )
-            )).all()
 
-            if all_issues:
-                int_count = sum(1 for i in all_issues if i.category in (IssueCategory.API_CONTRACT, IssueCategory.SCHEMA))
-                sec_count = sum(1 for i in all_issues if i.category == IssueCategory.SECURITY)
-                dep_count = sum(1 for i in all_issues if i.category == IssueCategory.DEPENDENCY)
-                deploy_count = sum(
-                    1 for i in all_issues
-                    if i.category not in (IssueCategory.API_CONTRACT, IssueCategory.SCHEMA, IssueCategory.SECURITY, IssueCategory.DEPENDENCY)
+            top_rows = all_issues[:5]
+            for iss in top_rows:
+                c_name = "dependencies" if iss.category == IssueCategory.DEPENDENCY else (
+                    "security" if iss.category == IssueCategory.SECURITY else "integration"
                 )
+                top_issues.append({
+                    "id": str(iss.id),
+                    "title": iss.title,
+                    "category": c_name,
+                    "severity": iss.severity.value if hasattr(iss.severity, "value") else str(iss.severity),
+                    "filePath": iss.file_path,
+                    "shortDescription": iss.description[:120] if iss.description else "",
+                })
+        elif target_analysis.category_scores:
+            cat_data = target_analysis.category_scores or {}
+            categories = cat_data.get("categories") or {}
+            dep_count = int(categories.get("dependency", {}).get("issue_count", 0))
+            sec_count = int(categories.get("security", {}).get("issue_count", 0))
+            api_count = int(categories.get("api_contract", {}).get("issue_count", 0))
+            schema_count = int(categories.get("schema", {}).get("issue_count", 0))
+            issue_counts = {
+                "integration": api_count + schema_count,
+                "security": sec_count,
+                "dependencies": dep_count,
+                "deployment": 0,
+            }
 
-                issue_counts = {
-                    "integration": int_count,
-                    "security": sec_count,
-                    "dependencies": dep_count,
-                    "deployment": deploy_count,
-                }
+            dep_s = int(categories.get("dependency", {}).get("score", 100))
+            sec_s = int(categories.get("security", {}).get("score", 100))
+            api_s = int(categories.get("api_contract", {}).get("score", 100))
+            sch_s = int(categories.get("schema", {}).get("score", 100))
+            cat_scores = {
+                "integration": min(api_s, sch_s),
+                "security": sec_s,
+                "dependencies": dep_s,
+                "deployment": 100,
+            }
 
-                sev_counts = {
-                    "critical": sum(1 for i in all_issues if i.severity == Severity.CRITICAL),
-                    "high": sum(1 for i in all_issues if i.severity == Severity.HIGH),
-                    "medium": sum(1 for i in all_issues if i.severity == Severity.MEDIUM),
-                    "low": sum(1 for i in all_issues if i.severity == Severity.LOW),
-                }
-
-                if latest_analysis.health_score is None and (not latest_analysis.category_scores or "score" not in latest_analysis.category_scores):
-                    health_score = max(
-                        0,
-                        100 - (sev_counts["critical"] * 15 + sev_counts["high"] * 8 + sev_counts["medium"] * 3 + sev_counts["low"] * 1),
-                    )
-
-                top_rows = all_issues[:5]
-                for iss in top_rows:
-                    c_name = "dependencies" if iss.category == IssueCategory.DEPENDENCY else (
-                        "security" if iss.category == IssueCategory.SECURITY else "integration"
-                    )
-                    top_issues.append({
-                        "id": str(iss.id),
-                        "title": iss.title,
-                        "category": c_name,
-                        "severity": iss.severity.value if hasattr(iss.severity, "value") else str(iss.severity),
-                        "filePath": iss.file_path,
-                        "shortDescription": iss.description[:120] if iss.description else "",
-                    })
-            elif latest_analysis.category_scores:
-                cat_data = latest_analysis.category_scores or {}
-                categories = cat_data.get("categories") or {}
-                dep_count = int(categories.get("dependency", {}).get("issue_count", 0))
-                sec_count = int(categories.get("security", {}).get("issue_count", 0))
-                api_count = int(categories.get("api_contract", {}).get("issue_count", 0))
-                schema_count = int(categories.get("schema", {}).get("issue_count", 0))
-                issue_counts = {
-                    "integration": api_count + schema_count,
-                    "security": sec_count,
-                    "dependencies": dep_count,
-                    "deployment": 0,
-                }
-
-                dep_s = int(categories.get("dependency", {}).get("score", 100))
-                sec_s = int(categories.get("security", {}).get("score", 100))
-                api_s = int(categories.get("api_contract", {}).get("score", 100))
-                sch_s = int(categories.get("schema", {}).get("score", 100))
-                cat_scores = {
-                    "integration": min(api_s, sch_s),
-                    "security": sec_s,
-                    "dependencies": dep_s,
-                    "deployment": 100,
-                }
-
-                raw_sevs = cat_data.get("severity_counts") or {}
-                sev_counts = {
-                    "critical": int(raw_sevs.get("critical", 0)),
-                    "high": int(raw_sevs.get("high", 0)),
-                    "medium": int(raw_sevs.get("medium", 0)),
-                    "low": int(raw_sevs.get("low", 0)),
-                }
+            raw_sevs = cat_data.get("severity_counts") or {}
+            sev_counts = {
+                "critical": int(raw_sevs.get("critical", 0)),
+                "high": int(raw_sevs.get("high", 0)),
+                "medium": int(raw_sevs.get("medium", 0)),
+                "low": int(raw_sevs.get("low", 0)),
+            }
     elif project.import_error:
         status_str = "failed"
 

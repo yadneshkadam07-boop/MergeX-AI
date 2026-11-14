@@ -71,15 +71,18 @@ export function ProjectTabs({ issueCounts }: ProjectTabsProps) {
   const { id } = useParams<{ id: string }>();
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll active tab into view horizontally on mobile
+  // Auto-scroll active tab into view horizontally on mobile without touching vertical page scroll
   useEffect(() => {
     if (containerRef.current) {
       const activeEl = containerRef.current.querySelector<HTMLElement>("[aria-current='page']");
       if (activeEl) {
-        activeEl.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+        const container = containerRef.current;
+        const targetLeft =
+          activeEl.offsetLeft - container.offsetWidth / 2 + activeEl.offsetWidth / 2;
+        container.scrollTo({ left: targetLeft, behavior: "smooth" });
       }
     }
-  });
+  }, [id]);
 
   return (
     <div className="-mx-4 border-b px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">

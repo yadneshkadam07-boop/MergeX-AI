@@ -381,9 +381,9 @@ export function ProjectLayout() {
       <ProjectTabs issueCounts={project.issueCounts} />
 
       {/* Nested Route Output */}
-      <main className="pt-2">
+      <div className="pt-2">
         <Outlet context={{ project, refreshProject: () => loadProject(true) }} />
-      </main>
+      </div>
 
       {/* Global Issue Detail Slide-Over */}
       <IssueDetailSheet projectId={project.id} onIssueUpdated={() => loadProject(true)} />

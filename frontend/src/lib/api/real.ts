@@ -199,22 +199,28 @@ export const realApi: ApiClientContract = {
 
         if (totalCount === 0 && project.status === "completed") {
           try {
-            const issues = await http.get<Issue[]>(`/projects/${encodeURIComponent(project.id)}/issues`);
-            if (Array.isArray(issues) && issues.length > 0) {
+            const rawIssues = await http.get<unknown>(`/projects/${encodeURIComponent(project.id)}/issues`);
+            const issues: Issue[] = Array.isArray(rawIssues)
+              ? (rawIssues as Issue[])
+              : rawIssues && typeof rawIssues === "object" && "items" in rawIssues && Array.isArray((rawIssues as Record<string, unknown>).items)
+                ? ((rawIssues as Record<string, unknown>).items as Issue[])
+                : [];
+
+            if (issues.length > 0) {
               const counts = { integration: 0, security: 0, dependencies: 0, deployment: 0 };
               const sevs = { critical: 0, high: 0, medium: 0, low: 0 };
               for (const iss of issues) {
-                const cat = String(iss.category);
+                const cat = String(iss.category).toLowerCase();
                 if (cat === "api_contract" || cat === "schema" || cat === "integration") {
                   counts.integration++;
                 } else if (cat === "security") {
                   counts.security++;
                 } else if (cat === "dependency" || cat === "dependencies") {
                   counts.dependencies++;
-                } else if (cat === "deployment") {
+                } else {
                   counts.deployment++;
                 }
-                const sev = iss.severity;
+                const sev = String(iss.severity).toLowerCase();
                 if (sev in sevs) sevs[sev as keyof typeof sevs]++;
               }
               project.issueCounts = counts;
@@ -251,31 +257,47 @@ export const realApi: ApiClientContract = {
       // If backend did not provide non-zero issue counts, sync with /issues
       if (totalCount === 0 && project.status === "completed") {
         try {
-          const issues = await http.get<Issue[]>(`/projects/${encodeURIComponent(id)}/issues`);
-          if (Array.isArray(issues) && issues.length > 0) {
+          const rawIssues = await http.get<unknown>(`/projects/${encodeURIComponent(id)}/issues`);
+          const issues: Issue[] = Array.isArray(rawIssues)
+            ? (rawIssues as Issue[])
+            : rawIssues && typeof rawIssues === "object" && "items" in rawIssues && Array.isArray((rawIssues as Record<string, unknown>).items)
+              ? ((rawIssues as Record<string, unknown>).items as Issue[])
+              : [];
+
+          if (issues.length > 0) {
             const counts = { integration: 0, security: 0, dependencies: 0, deployment: 0 };
             const sevs = { critical: 0, high: 0, medium: 0, low: 0 };
             for (const iss of issues) {
-              const cat = String(iss.category);
+              const cat = String(iss.category).toLowerCase();
               if (cat === "api_contract" || cat === "schema" || cat === "integration") {
                 counts.integration++;
               } else if (cat === "security") {
                 counts.security++;
               } else if (cat === "dependency" || cat === "dependencies") {
                 counts.dependencies++;
-              } else if (cat === "deployment") {
+              } else {
                 counts.deployment++;
               }
-              const sev = iss.severity;
+              const sev = String(iss.severity).toLowerCase();
               if (sev in sevs) sevs[sev as keyof typeof sevs]++;
             }
             project.issueCounts = counts;
             project.severityCounts = sevs;
+            if (project.healthScore === 70 || project.healthScore === 100) {
+              project.healthScore = Math.max(
+                0,
+                100 - (sevs.critical * 15 + sevs.high * 8 + sevs.medium * 3 + sevs.low * 1),
+              );
+            }
             if (project.topIssues.length === 0) {
               project.topIssues = issues.slice(0, 5).map((i) => {
-                const catStr = String(i.category);
+                const catStr = String(i.category).toLowerCase();
                 const normCat: IssueCategory =
-                  catStr === "dependency" ? "dependencies" : (i.category as IssueCategory);
+                  catStr === "dependency" || catStr === "dependencies"
+                    ? "dependencies"
+                    : catStr === "security"
+                      ? "security"
+                      : "integration";
                 return {
                   id: i.id,
                   title: i.title,
