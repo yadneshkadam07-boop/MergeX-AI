@@ -137,7 +137,7 @@ export function AppLayout() {
   );
 
   return (
-    <div className="bg-background text-foreground flex min-h-screen flex-col">
+    <div className="bg-background text-foreground flex h-screen h-dvh flex-col overflow-hidden">
       {/* Skip to Main Content Link for Keyboard and Screen Reader Users */}
       <a
         href="#main-content"
@@ -149,7 +149,7 @@ export function AppLayout() {
       {/* Offline status indicator */}
       <OfflineBanner />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Desktop Fixed Sidebar */}
         <aside
           className={cn(
@@ -171,7 +171,7 @@ export function AppLayout() {
         </Sheet>
 
         {/* Main Container */}
-        <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
           {/* Top Bar */}
           <header className="bg-background/80 sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between border-b px-4 backdrop-blur-md sm:px-6">
             {/* Left: Sidebar Toggle & Page Title */}
@@ -310,7 +310,7 @@ export function AppLayout() {
           <main
             id="main-content"
             tabIndex={-1}
-            className="flex-1 overflow-y-auto scroll-smooth overscroll-contain p-4 focus:outline-hidden sm:p-6 lg:p-8"
+            className="flex-1 min-h-0 overflow-y-auto scroll-smooth p-4 focus:outline-hidden sm:p-6 lg:p-8"
           >
             <div className="mx-auto max-w-6xl">
               <Outlet />

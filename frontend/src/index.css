@@ -389,17 +389,14 @@ a:focus-visible > .card-interactive::before,
 
 /* Performance & smooth scrolling enhancements */
 html,
-body,
+body {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
 #main-content {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
-}
-
-/* Defer layout and rendering of off-screen elements for 60-120 FPS scrolling */
-.smooth-row {
-  content-visibility: auto;
-  contain-intrinsic-size: 0 53px;
 }
 
 .smooth-card {

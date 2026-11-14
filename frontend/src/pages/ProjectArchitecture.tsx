@@ -357,6 +357,9 @@ export function ProjectArchitecture() {
           colorMode={themeColors.isDark ? "dark" : "light"}
           minZoom={0.3}
           maxZoom={1.5}
+          preventScrolling={false}
+          zoomOnScroll={false}
+          panOnScroll={false}
           proOptions={{ hideAttribution: true }}
         >
           <Background
