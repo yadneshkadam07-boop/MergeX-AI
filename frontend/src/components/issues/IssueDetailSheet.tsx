@@ -17,6 +17,16 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -26,9 +36,11 @@ import {
   EyeOff,
   FileCode,
   GitPullRequest,
+  KeyRound,
   Loader2,
   RotateCcw,
   Sparkles,
+  Terminal,
 } from "lucide-react";
 
 interface IssueDetailSheetProps {
@@ -49,8 +61,20 @@ export function IssueDetailSheet({
   const [loading, setLoading] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [copiedPatch, setCopiedPatch] = useState(false);
+  const [copiedCli, setCopiedCli] = useState(false);
   const [creatingPr, setCreatingPr] = useState(false);
   const [prResult, setPrResult] = useState<CreatePullRequestResponse | null>(null);
+
+  // GitHub PR token modal state
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
+  const [githubToken, setGithubToken] = useState(() => {
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("mergex_github_token") || "";
+    }
+    return "";
+  });
+  const [rememberToken, setRememberToken] = useState(true);
 
   // Close sheet by removing query param
   const handleClose = useCallback(() => {
@@ -143,31 +167,101 @@ Please implement the exact fix in ${issue.filePath}.`;
     setTimeout(() => setCopiedPrompt(false), 2500);
   };
 
-  const handleCreatePr = async () => {
+  const generateGitPatch = () => {
+    if (!issue) return "";
+    const file = issue.filePath || "patch.txt";
+    const before = issue.suggestedFix.codeBefore || "";
+    const after = issue.suggestedFix.codeAfter || "";
+    const beforeLines = before ? before.split("\n") : [];
+    const afterLines = after ? after.split("\n") : [];
+
+    return [
+      `--- a/${file}`,
+      `+++ b/${file}`,
+      `@@ -1,${Math.max(1, beforeLines.length)} +1,${Math.max(1, afterLines.length)} @@`,
+      ...beforeLines.map((line) => `-${line}`),
+      ...afterLines.map((line) => `+${line}`),
+      "",
+    ].join("\n");
+  };
+
+  const handleCopyGitPatch = async () => {
+    const patch = generateGitPatch();
+    if (!patch) return;
+    await navigator.clipboard.writeText(patch);
+    setCopiedPatch(true);
+    toast.success("Git unified patch copied to clipboard!", {
+      description: "Save as fix.patch and run: git apply fix.patch",
+    });
+    setTimeout(() => setCopiedPatch(false), 2500);
+  };
+
+  const handleCopyCliCommand = async () => {
+    if (!issue) return;
+    const catSlug = (issue.category || "fix").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+    const branch = `mergex/fix-${catSlug}-${issue.id.slice(0, 6)}`;
+    const cmd = `git checkout -b ${branch} && git add ${issue.filePath || "."} && git commit -m "fix(${issue.category}): ${issue.title.replace(/"/g, '\\"')}"`;
+    await navigator.clipboard.writeText(cmd);
+    setCopiedCli(true);
+    toast.success("Git CLI checkout & commit command copied!");
+    setTimeout(() => setCopiedCli(false), 2500);
+  };
+
+  const executeCreatePr = async (token?: string) => {
     if (!issue || creatingPr) return;
     setCreatingPr(true);
     try {
-      const savedToken =
-        typeof window !== "undefined"
-          ? sessionStorage.getItem("mergex_github_token") || undefined
-          : undefined;
-      const res = await createPullRequest(projectId, issue.id, savedToken);
+      const res = await createPullRequest(projectId, issue.id, token);
       setPrResult(res);
       const updated: Issue = { ...issue, status: "resolved" };
       setIssue(updated);
       if (onIssueUpdated) onIssueUpdated(updated);
-      toast.success(`GitHub Pull Request #${res.prNumber} opened successfully!`, {
-        action: {
-          label: "View PR",
-          onClick: () => window.open(res.prUrl, "_blank"),
-        },
-      });
+
+      if (res.status === "simulated") {
+        toast.info(`Simulated PR created for preview (${res.branch})`, {
+          description: "Provide a GitHub token with write access for a live PR on GitHub.",
+        });
+      } else {
+        toast.success(`GitHub Pull Request #${res.prNumber} opened successfully!`, {
+          action: {
+            label: "View PR",
+            onClick: () => window.open(res.prUrl, "_blank"),
+          },
+        });
+      }
     } catch (err) {
       console.error("Failed to create pull request:", err);
       toast.error("Failed to create GitHub Pull Request. Please verify your token permissions.");
     } finally {
       setCreatingPr(false);
     }
+  };
+
+  const handleInitiateCreatePr = () => {
+    if (!issue || creatingPr) return;
+    const savedToken =
+      typeof window !== "undefined"
+        ? sessionStorage.getItem("mergex_github_token") || ""
+        : "";
+
+    if (savedToken.trim()) {
+      executeCreatePr(savedToken.trim());
+    } else {
+      setTokenModalOpen(true);
+    }
+  };
+
+  const handleConfirmTokenSubmit = (useToken: boolean) => {
+    const tokenToUse = useToken && githubToken.trim() ? githubToken.trim() : undefined;
+    if (typeof window !== "undefined") {
+      if (useToken && rememberToken && githubToken.trim()) {
+        sessionStorage.setItem("mergex_github_token", githubToken.trim());
+      } else if (!useToken) {
+        sessionStorage.removeItem("mergex_github_token");
+      }
+    }
+    setTokenModalOpen(false);
+    executeCreatePr(tokenToUse);
   };
 
   const handleUpdateStatus = async (newStatus: IssueStatus) => {
@@ -466,39 +560,110 @@ Please implement the exact fix in ${issue.filePath}.`;
                   </div>
                 )}
 
-                {/* One-Click Pull Request Action */}
-                <div className="pt-2">
+                {/* One-Click Pull Request Action & Local Patch Utilities */}
+                <div className="space-y-2.5 pt-2">
                   {prResult ? (
-                    <div className="space-y-2 rounded-lg border border-purple-500/30 bg-purple-500/10 p-3.5">
+                    <div
+                      className={`space-y-2.5 rounded-lg border p-3.5 ${
+                        prResult.status === "simulated"
+                          ? "border-amber-500/30 bg-amber-500/10"
+                          : "border-purple-500/30 bg-purple-500/10"
+                      }`}
+                    >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <GitPullRequest className="size-4 shrink-0 text-purple-400" />
-                          <span className="text-xs font-semibold text-purple-300">
-                            Pull Request Opened on GitHub!
+                          <GitPullRequest
+                            className={`size-4 shrink-0 ${
+                              prResult.status === "simulated"
+                                ? "text-amber-400"
+                                : "text-purple-400"
+                            }`}
+                          />
+                          <span
+                            className={`text-xs font-semibold ${
+                              prResult.status === "simulated"
+                                ? "text-amber-300"
+                                : "text-purple-300"
+                            }`}
+                          >
+                            {prResult.status === "simulated"
+                              ? "Simulated PR Preview"
+                              : "Pull Request Active on GitHub!"}
                           </span>
                         </div>
-                        <span className="rounded bg-purple-500/20 px-2 py-0.5 font-mono text-[10px] text-purple-300">
-                          PR #{prResult.prNumber}
+                        <span
+                          className={`rounded px-2 py-0.5 font-mono text-[10px] ${
+                            prResult.status === "simulated"
+                              ? "bg-amber-500/20 text-amber-300"
+                              : "bg-purple-500/20 text-purple-300"
+                          }`}
+                        >
+                          {prResult.status === "simulated"
+                            ? "Demo Mode"
+                            : `PR #${prResult.prNumber}`}
                         </span>
                       </div>
-                      <p className="text-muted-foreground text-[11px]">
-                        Branch <span className="text-foreground font-mono">{prResult.branch}</span>{" "}
-                        created with automated remediation patch.
+
+                      <p className="text-muted-foreground text-[11px] leading-relaxed">
+                        {prResult.status === "simulated" ? (
+                          <>
+                            Simulated branch{" "}
+                            <span className="text-foreground font-mono">
+                              {prResult.branch}
+                            </span>
+                            . No GitHub write token was provided.
+                          </>
+                        ) : (
+                          <>
+                            Branch{" "}
+                            <span className="text-foreground font-mono">
+                              {prResult.branch}
+                            </span>{" "}
+                            created with automated remediation patch.
+                          </>
+                        )}
                       </p>
-                      <Button
-                        asChild
-                        size="sm"
-                        className="h-8 w-full gap-1.5 bg-purple-600 text-xs font-semibold text-white hover:bg-purple-500"
-                      >
-                        <a href={prResult.prUrl} target="_blank" rel="noopener noreferrer">
-                          <span>View Pull Request #{prResult.prNumber} on GitHub</span>
-                          <ExternalLink className="size-3" />
-                        </a>
-                      </Button>
+
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          asChild
+                          size="sm"
+                          className={`h-8 flex-1 gap-1.5 text-xs font-semibold text-white ${
+                            prResult.status === "simulated"
+                              ? "bg-amber-600 hover:bg-amber-500"
+                              : "bg-purple-600 hover:bg-purple-500"
+                          }`}
+                        >
+                          <a
+                            href={prResult.prUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <span>
+                              {prResult.status === "simulated"
+                                ? "View Demo URL"
+                                : `View PR #${prResult.prNumber} on GitHub`}
+                            </span>
+                            <ExternalLink className="size-3" />
+                          </a>
+                        </Button>
+
+                        {prResult.status === "simulated" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setTokenModalOpen(true)}
+                            className="h-8 gap-1.5 text-xs font-medium"
+                          >
+                            <KeyRound className="size-3.5 text-amber-400" />
+                            <span>Set Token for Real PR</span>
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ) : (
                     <Button
-                      onClick={handleCreatePr}
+                      onClick={handleInitiateCreatePr}
                       disabled={creatingPr}
                       className="h-9 w-full gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-xs font-semibold text-white shadow-sm hover:from-purple-500 hover:to-indigo-500"
                     >
@@ -515,6 +680,51 @@ Please implement the exact fix in ${issue.filePath}.`;
                       )}
                     </Button>
                   )}
+
+                  {/* Secondary Local Patch & CLI Utilities */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyGitPatch}
+                      className="h-8 gap-1.5 text-xs font-medium"
+                      title="Copy unified git diff patch to clipboard"
+                    >
+                      {copiedPatch ? (
+                        <>
+                          <Check className="text-success size-3.5" />
+                          <span>Patch Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileCode className="size-3.5 text-purple-400" />
+                          <span>Copy Git Patch</span>
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyCliCommand}
+                      className="h-8 gap-1.5 text-xs font-medium"
+                      title="Copy terminal command to branch and commit fix"
+                    >
+                      {copiedCli ? (
+                        <>
+                          <Check className="text-success size-3.5" />
+                          <span>Command Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Terminal className="size-3.5 text-cyan-400" />
+                          <span>Copy CLI Command</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </>
@@ -583,6 +793,87 @@ Please implement the exact fix in ${issue.filePath}.`;
           </div>
         )}
       </SheetContent>
+
+      {/* GitHub Token / PR Credentials Modal */}
+      <Dialog open={tokenModalOpen} onOpenChange={setTokenModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="bg-primary/10 text-primary flex size-8 items-center justify-center rounded-lg">
+                <GitPullRequest className="size-4" />
+              </div>
+              <DialogTitle className="text-base font-semibold">
+                Open GitHub Pull Request
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs">
+              MergeX AI will push a remediation commit to a new branch and open a PR directly on your repository.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="pr-token-input" className="text-xs font-medium">
+                GitHub Personal Access Token (PAT)
+              </Label>
+              <Input
+                id="pr-token-input"
+                type="password"
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                className="h-9 font-mono text-xs"
+              />
+              <p className="text-muted-foreground text-[11px] leading-relaxed">
+                Requires <code className="text-foreground font-mono">repo</code> scope for classic tokens or <code className="text-foreground font-mono">Contents: Write</code> &amp; <code className="text-foreground font-mono">Pull Requests: Write</code> for fine-grained tokens. Tokens are used in-flight and never stored permanently in server databases.
+              </p>
+            </div>
+
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberToken}
+                onChange={(e) => setRememberToken(e.target.checked)}
+                className="rounded border-border accent-primary size-3.5"
+              />
+              <span>Remember token for this browser session</span>
+            </label>
+          </div>
+
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => handleConfirmTokenSubmit(false)}
+              className="text-muted-foreground hover:text-foreground text-xs"
+            >
+              Simulate Demo PR
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setTokenModalOpen(false)}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => handleConfirmTokenSubmit(true)}
+                disabled={!githubToken.trim()}
+                className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold gap-1.5"
+              >
+                <GitPullRequest className="size-3.5" />
+                <span>Create Live PR</span>
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }

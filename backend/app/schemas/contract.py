@@ -376,6 +376,14 @@ class UserSettingsUpdate(BaseModel):
     alert_severity: str | None = Field(default=None, alias="alertSeverity")
 
 
+class CreatePullRequestRequest(BaseModel):
+    """Optional payload for requesting an automated pull request."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    github_token: str | None = Field(default=None, alias="githubToken")
+
+
 class CreatePullRequestResponse(BaseModel):
     """Response returned when an automated PR is created."""
 

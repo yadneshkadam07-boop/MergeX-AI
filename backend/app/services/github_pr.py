@@ -99,11 +99,17 @@ async def create_pull_request_for_issue(
                 except Exception:
                     content_raw = ""
 
-                # Replace fix_before with fix_after if found, or replace lines
-                if issue.fix_before and issue.fix_before in content_raw:
-                    updated_content = content_raw.replace(issue.fix_before, issue.fix_after)
+                # Normalize newlines for reliable cross-platform matching
+                norm_content = content_raw.replace("\r\n", "\n")
+                norm_before = issue.fix_before.replace("\r\n", "\n") if issue.fix_before else ""
+                norm_after = issue.fix_after.replace("\r\n", "\n")
+
+                if norm_before and norm_before in norm_content:
+                    updated_content = norm_content.replace(norm_before, norm_after)
+                elif norm_before and norm_before.strip() in norm_content:
+                    updated_content = norm_content.replace(norm_before.strip(), norm_after.strip())
                 else:
-                    updated_content = content_raw if content_raw else issue.fix_after
+                    updated_content = norm_content if norm_content else norm_after
 
                 content_b64 = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
                 commit_msg = (
@@ -119,19 +125,44 @@ async def create_pull_request_for_issue(
                         "branch": branch_name,
                     },
                 )
+            elif file_resp.status_code == 404:
+                # File does not exist yet: create it directly
+                content_b64 = base64.b64encode(issue.fix_after.encode("utf-8")).decode("utf-8")
+                commit_msg = (
+                    f"chore({issue.category}): create {issue.file_path}\n\nAutomated fix applied by MergeX AI."
+                )
+                await client.put(
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{issue.file_path}",
+                    headers=headers,
+                    json={
+                        "message": commit_msg,
+                        "content": content_b64,
+                        "branch": branch_name,
+                    },
+                )
 
         # 6. Create Pull Request
         pr_title = f"fix({issue.category}): {issue.title}"
+        target_display = (
+            f"`{issue.file_path}:{issue.line_number}`"
+            if issue.file_path and issue.line_number
+            else f"`{issue.file_path or 'Project tree'}`"
+        )
         pr_body = (
             f"## 🤖 MergeX AI Automated Remediation\n\n"
             f"### Defect Identified\n"
             f"- **Rule ID:** `{issue.detected_by}`\n"
-            f"- **Title:** {issue.title}\n"
-            f"- **File:** `{issue.file_path or 'Project tree'}`\n\n"
+            f"- **Severity:** `{str(issue.severity).upper()}`\n"
+            f"- **Category:** `{str(issue.category).title()}`\n"
+            f"- **Target File:** {target_display}\n\n"
             f"### Problem Description\n"
             f"{issue.explanation or issue.description}\n\n"
             f"### Suggested Fix\n"
             f"{issue.suggested_fix or 'Applied automated remediation patch.'}\n\n"
+            f"### Verification Checklist\n"
+            f"- [ ] Review diff for accuracy and compliance with repository standards.\n"
+            f"- [ ] Run local automated test suite.\n"
+            f"- [ ] Verify that no downstream callers or APIs are broken.\n\n"
             f"---\n"
             f"*Automatically generated and verified by [MergeX AI](https://merge-x-ai.vercel.app).*"
         )

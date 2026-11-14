@@ -48,6 +48,7 @@ from app.schemas.common import (
 from app.schemas.contract import (
     ArchitectureOut,
     ChecklistItemOut,
+    CreatePullRequestRequest,
     CreatePullRequestResponse,
     IssueStatusUpdate,
     OneStepAnalysisResponse,
@@ -622,6 +623,7 @@ async def create_issue_pr(
     session: SessionDep,
     settings: SettingsDep,
     current_user: CurrentUserDep,
+    payload: CreatePullRequestRequest | None = None,
     github_token_header: str | None = Header(None, alias="x-github-token"),
 ) -> CreatePullRequestResponse:
     """Create a pull request on GitHub applying the suggested fix for an issue."""
@@ -631,7 +633,8 @@ async def create_issue_pr(
     if issue is None or issue.analysis.project_id != project_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue not found.")
 
-    token = github_token_header or settings.github_token
+    explicit_token = (payload.github_token if payload else None) or github_token_header
+    token = explicit_token or settings.github_token
     token_str = token.get_secret_value() if hasattr(token, "get_secret_value") else str(token or "")
 
     repo_url = (

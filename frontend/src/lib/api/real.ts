@@ -314,7 +314,7 @@ export const realApi: ApiClientContract = {
     }
     return http.post<CreatePullRequestResponse>(
       `/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/create-pr`,
-      {},
+      { githubToken },
       { headers },
     );
   },
