@@ -1,4 +1,4 @@
-import React, { memo, useState } from "react";
+import React, { memo, useState, useMemo, useEffect } from "react";
 import type { Issue } from "@/types/issue";
 import { SeverityBadge } from "@/components/shared/SeverityBadge";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -13,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -29,6 +28,7 @@ import { createBatchPullRequest } from "@/lib/api";
 import { toast } from "sonner";
 import {
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   FileCode,
   GitPullRequest,
@@ -101,6 +101,9 @@ const MemoizedIssueTableRow = memo(function IssueTableRow({
   hasExtraCell,
 }: IssueRowProps) {
   const isMuted = issue.status !== "open";
+  const locationTooltip = `${issue.filePath}${
+    issue.lineStart ? ` (Line ${issue.lineStart}${issue.lineEnd ? `-${issue.lineEnd}` : ""})` : ""
+  }`;
 
   return (
     <TableRow
@@ -113,7 +116,7 @@ const MemoizedIssueTableRow = memo(function IssueTableRow({
         }
       }}
       className={cn(
-        "hover:bg-muted/50 focus:bg-muted/60 cursor-pointer transition-colors focus:outline-hidden",
+        "smooth-row hover:bg-muted/50 focus:bg-muted/60 cursor-pointer transition-colors focus:outline-hidden",
         isMuted && "bg-muted/15 opacity-60",
         isSelected && "bg-purple-500/10 hover:bg-purple-500/15",
       )}
@@ -147,22 +150,15 @@ const MemoizedIssueTableRow = memo(function IssueTableRow({
         </div>
       </TableCell>
 
-      {/* File Location with Tooltip */}
+      {/* File Location with High-Performance Native Tooltip */}
       <TableCell className="py-3 align-top">
-        <Tooltip delayDuration={200}>
-          <TooltipTrigger asChild>
-            <div className="text-muted-foreground hover:text-foreground inline-flex max-w-[180px] items-center gap-1.5 truncate font-mono text-[11px]">
-              <FileCode className="size-3.5 shrink-0" />
-              <span className="truncate">{issue.filePath}</span>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-sm font-mono text-xs break-all">
-            {issue.filePath}
-            {issue.lineStart
-              ? ` (Line ${issue.lineStart}${issue.lineEnd ? `-${issue.lineEnd}` : ""})`
-              : ""}
-          </TooltipContent>
-        </Tooltip>
+        <div
+          title={locationTooltip}
+          className="text-muted-foreground hover:text-foreground inline-flex max-w-[190px] items-center gap-1.5 truncate font-mono text-[11px] cursor-help"
+        >
+          <FileCode className="size-3.5 shrink-0 opacity-70" />
+          <span className="truncate">{issue.filePath}</span>
+        </div>
       </TableCell>
 
       {/* Optional Extra Category Cell */}
@@ -188,6 +184,9 @@ const MemoizedIssueMobileCard = memo(function IssueMobileCard({
   onToggleSelect: (issueId: string) => void;
 }) {
   const isMuted = issue.status !== "open";
+  const locationTooltip = `${issue.filePath}${
+    issue.lineStart ? ` (Line ${issue.lineStart}${issue.lineEnd ? `-${issue.lineEnd}` : ""})` : ""
+  }`;
 
   return (
     <Card
@@ -202,7 +201,7 @@ const MemoizedIssueMobileCard = memo(function IssueMobileCard({
         }
       }}
       className={cn(
-        "bg-card focus-visible:ring-ring cursor-pointer gap-0 rounded-xl border p-4 py-4 text-left focus:outline-hidden focus-visible:ring-2",
+        "smooth-card bg-card focus-visible:ring-ring cursor-pointer gap-0 rounded-xl border p-4 py-4 text-left focus:outline-hidden focus-visible:ring-2",
         isMuted && "bg-muted/20 opacity-60",
         isSelected && "border-purple-500/40 bg-purple-500/10",
       )}
@@ -230,8 +229,11 @@ const MemoizedIssueMobileCard = memo(function IssueMobileCard({
       <p className="text-muted-foreground mt-1 line-clamp-1 text-xs">{issue.shortDescription}</p>
 
       <div className="text-muted-foreground mt-3 flex items-center justify-between border-t pt-2.5 text-xs">
-        <div className="flex max-w-[200px] items-center gap-1 truncate font-mono text-[11px]">
-          <FileCode className="size-3.5 shrink-0" />
+        <div
+          title={locationTooltip}
+          className="flex max-w-[200px] items-center gap-1 truncate font-mono text-[11px] cursor-help"
+        >
+          <FileCode className="size-3.5 shrink-0 opacity-70" />
           <span className="truncate">{issue.filePath}</span>
         </div>
         <ChevronRight className="text-muted-foreground/60 size-4" />
@@ -262,6 +264,23 @@ export function IssueTable({
   });
   const [rememberToken, setRememberToken] = useState(true);
 
+  // Pagination for ultra-fast rendering & smooth scrolling
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [issues.length]);
+
+  const totalPages = pageSize === -1 ? 1 : Math.ceil(issues.length / pageSize);
+  const safePage = Math.min(Math.max(currentPage, 1), Math.max(totalPages, 1));
+
+  const displayedIssues = useMemo(() => {
+    if (pageSize === -1 || issues.length <= pageSize) return issues;
+    const start = (safePage - 1) * pageSize;
+    return issues.slice(start, start + pageSize);
+  }, [issues, safePage, pageSize]);
+
   const toggleSelect = (issueId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -274,15 +293,23 @@ export function IssueTable({
     });
   };
 
-  const openIssues = issues.filter((i) => i.status === "open");
+  const openIssues = displayedIssues.filter((i) => i.status === "open");
   const allOpenSelected =
     openIssues.length > 0 && openIssues.every((i) => selectedIds.has(i.id));
 
   const toggleSelectAll = () => {
     if (allOpenSelected) {
-      setSelectedIds(new Set());
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        openIssues.forEach((i) => next.delete(i.id));
+        return next;
+      });
     } else {
-      setSelectedIds(new Set(openIssues.map((i) => i.id)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        openIssues.forEach((i) => next.add(i.id));
+        return next;
+      });
     }
   };
 
@@ -376,7 +403,7 @@ export function IssueTable({
     <div className="w-full space-y-4">
       {/* Mobile Card View (< md) */}
       <div className="grid grid-cols-1 gap-3 md:hidden">
-        {issues.map((issue) => (
+        {displayedIssues.map((issue) => (
           <MemoizedIssueMobileCard
             key={issue.id}
             issue={issue}
@@ -398,8 +425,8 @@ export function IssueTable({
                   checked={allOpenSelected}
                   onChange={toggleSelectAll}
                   className="size-4 rounded border-border accent-purple-600 cursor-pointer"
-                  aria-label="Select all open issues"
-                  title="Select all open issues"
+                  aria-label="Select all open issues on this page"
+                  title="Select all open issues on this page"
                 />
               </TableHead>
               <TableHead className="w-28 text-xs font-semibold">Severity</TableHead>
@@ -412,7 +439,7 @@ export function IssueTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {issues.map((issue) => (
+            {displayedIssues.map((issue) => (
               <MemoizedIssueTableRow
                 key={issue.id}
                 issue={issue}
@@ -427,9 +454,73 @@ export function IssueTable({
         </Table>
       </div>
 
-      {/* Floating Sticky Batch Action Bar */}
+      {/* High-Performance Pagination Footer */}
+      {issues.length > 20 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-2 pt-1 text-xs text-muted-foreground">
+          <div>
+            Showing{" "}
+            <span className="font-semibold text-foreground">
+              {pageSize === -1 ? 1 : (safePage - 1) * pageSize + 1}–
+              {pageSize === -1 ? issues.length : Math.min(safePage * pageSize, issues.length)}
+            </span>{" "}
+            of <span className="font-semibold text-foreground">{issues.length}</span> issues
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              className="h-7 w-7 p-0"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="size-3.5" />
+            </Button>
+
+            <span className="px-2 text-xs font-medium">
+              Page {safePage} of {totalPages}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              className="h-7 w-7 p-0"
+              aria-label="Next page"
+            >
+              <ChevronRight className="size-3.5" />
+            </Button>
+
+            {/* Page size toggle */}
+            <div className="ml-2 flex items-center gap-1 border-l pl-2 border-border">
+              <span className="text-[11px] text-muted-foreground">Per page:</span>
+              {[20, 50, -1].map((size) => (
+                <button
+                  key={size}
+                  onClick={() => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  className={cn(
+                    "px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer",
+                    pageSize === size
+                      ? "bg-purple-600 text-white font-semibold"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {size === -1 ? "All" : size}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Sticky Batch Action Bar (GPU Accelerated) */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-purple-500/30 bg-background/95 backdrop-blur-md px-4 py-2.5 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="gpu-accelerated fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 rounded-full border border-purple-500/30 bg-background/95 backdrop-blur-md px-4 py-2.5 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200">
           <Badge
             variant="secondary"
             className="bg-purple-500/20 text-purple-300 font-semibold text-xs h-6 px-2.5"
