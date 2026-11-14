@@ -10,6 +10,7 @@ import httpx
 from app.core.logging import get_logger
 from app.models.issue import Issue
 from app.services.github import InvalidGitHubUrlError, parse_github_url
+from app.services.patch_engine import apply_code_patch, resolve_target_file_path
 
 log = get_logger("app.services.github_pr")
 
@@ -85,10 +86,16 @@ async def create_pull_request_for_issue(
             log.warning("failed_create_branch", status=create_branch_resp.status_code)
             return _simulated_pr(repo_url, issue)
 
-        # 5. Apply fix to file if file_path and fix_after exist
-        if issue.file_path and issue.fix_after:
+        # 5. Apply fix to file if fix_after exists
+        target_path = resolve_target_file_path(
+            issue.file_path,
+            rule_id=issue.detected_by,
+            category=issue.category,
+        )
+
+        if issue.fix_after:
             file_resp = await client.get(
-                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{issue.file_path}?ref={branch_name}",
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}?ref={branch_name}",
                 headers=headers,
             )
             if file_resp.status_code == 200:
@@ -99,40 +106,36 @@ async def create_pull_request_for_issue(
                 except Exception:
                     content_raw = ""
 
-                # Normalize newlines for reliable cross-platform matching
-                norm_content = content_raw.replace("\r\n", "\n")
-                norm_before = issue.fix_before.replace("\r\n", "\n") if issue.fix_before else ""
-                norm_after = issue.fix_after.replace("\r\n", "\n")
-
-                if norm_before and norm_before in norm_content:
-                    updated_content = norm_content.replace(norm_before, norm_after)
-                elif norm_before and norm_before.strip() in norm_content:
-                    updated_content = norm_content.replace(norm_before.strip(), norm_after.strip())
-                else:
-                    updated_content = norm_content if norm_content else norm_after
-
-                content_b64 = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
-                commit_msg = (
-                    f"fix({issue.category}): {issue.title}\n\nAutomated fix applied by MergeX AI."
+                updated_content, modified = apply_code_patch(
+                    content_raw,
+                    issue.fix_before,
+                    issue.fix_after,
+                    target_line=issue.line_number,
                 )
-                await client.put(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{issue.file_path}",
-                    headers=headers,
-                    json={
-                        "message": commit_msg,
-                        "content": content_b64,
-                        "sha": file_sha,
-                        "branch": branch_name,
-                    },
-                )
+
+                if modified:
+                    content_b64 = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
+                    commit_msg = (
+                        f"fix({issue.category}): {issue.title}\n\nAutomated fix applied by MergeX AI."
+                    )
+                    await client.put(
+                        f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}",
+                        headers=headers,
+                        json={
+                            "message": commit_msg,
+                            "content": content_b64,
+                            "sha": file_sha,
+                            "branch": branch_name,
+                        },
+                    )
             elif file_resp.status_code == 404:
                 # File does not exist yet: create it directly
                 content_b64 = base64.b64encode(issue.fix_after.encode("utf-8")).decode("utf-8")
                 commit_msg = (
-                    f"chore({issue.category}): create {issue.file_path}\n\nAutomated fix applied by MergeX AI."
+                    f"chore({issue.category}): add {target_path}\n\nAutomated fix applied by MergeX AI."
                 )
                 await client.put(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{issue.file_path}",
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}",
                     headers=headers,
                     json={
                         "message": commit_msg,
@@ -144,9 +147,9 @@ async def create_pull_request_for_issue(
         # 6. Create Pull Request
         pr_title = f"fix({issue.category}): {issue.title}"
         target_display = (
-            f"`{issue.file_path}:{issue.line_number}`"
-            if issue.file_path and issue.line_number
-            else f"`{issue.file_path or 'Project tree'}`"
+            f"`{target_path}:{issue.line_number}`"
+            if issue.line_number
+            else f"`{target_path}`"
         )
         pr_body = (
             f"## 🤖 MergeX AI Automated Remediation\n\n"
