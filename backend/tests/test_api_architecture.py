@@ -114,3 +114,61 @@ class TestProjectArchitecture:
         edge_client_api = next(e for e in data["edges"] if e["id"] == "edge_client_api")
         assert issue_id in edge_client_api["issueIds"]
         assert edge_client_api["status"] == "broken"
+
+    def test_synthesizes_chatbot_nlp_architecture(self, client: TestClient) -> None:
+        chatbot_tree = {
+            "app.py": "from flask import Flask\nimport nltk\napp = Flask(__name__)\n",
+            "intents.json": '{"intents": [{"tag": "greeting", "patterns": ["hello"]}]}',
+            "requirements.txt": "flask==3.0.0\nnltk==3.8.1\ntorch==2.2.0\n",
+        }
+        response = client.post(
+            "/api/v1/projects/upload",
+            files={"file": ("Health-Care-Chatbot.zip", make_zip(chatbot_tree), "application/zip")},
+        )
+        assert response.status_code == 201
+        pid = response.json()["project"]["id"]
+
+        res = client.get(f"/api/v1/projects/{pid}/architecture")
+        assert res.status_code == 200
+        arch = res.json()
+
+        labels = [n["label"] for n in arch["nodes"]]
+        assert any("Chatbot" in l for l in labels)
+        assert any("Dialogue" in l or "Server" in l for l in labels)
+        assert any("NLP" in l or "Intent" in l for l in labels)
+        assert any("Corpus" in l or "Knowledge" in l for l in labels)
+
+    def test_synthesizes_ecommerce_marketplace_architecture(self, client: TestClient) -> None:
+        ecommerce_tree = {
+            "package.json": json.dumps({
+                "name": "fullstack-ecommerce-platform",
+                "dependencies": {
+                    "react": "^18.2.0",
+                    "express": "^4.18.2",
+                    "mongoose": "^8.0.0",
+                    "stripe": "^14.0.0",
+                },
+            }),
+            "server/models/product.js": "const mongoose = require('mongoose');\n",
+        }
+        response = client.post(
+            "/api/v1/projects/upload",
+            files={"file": ("fullstack-ecommerce.zip", make_zip(ecommerce_tree), "application/zip")},
+        )
+        assert response.status_code == 201
+        pid = response.json()["project"]["id"]
+
+        res = client.get(f"/api/v1/projects/{pid}/architecture")
+        assert res.status_code == 200
+        arch = res.json()
+
+        node_map = {n["id"]: n for n in arch["nodes"]}
+        assert "node_web" in node_map
+        assert "node_api" in node_map
+        assert "node_auth" in node_map
+        assert "node_db" in node_map
+        assert "node_external" in node_map
+
+        assert "MongoDB" in node_map["node_db"]["tech"]
+        assert "Stripe" in node_map["node_external"]["label"]
+
