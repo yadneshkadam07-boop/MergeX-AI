@@ -24,10 +24,12 @@ export function ScoreRing({ score, size = 132, strokeWidth = 10, className }: Sc
     label = "Needs Attention";
   }
 
+  const isFloored = score === 0;
+
   return (
     <div
       role="img"
-      aria-label={`Project Health Score: ${score} out of 100 (${label})`}
+      aria-label={`Project Health Score: ${score} out of 100 (${label}${isFloored ? " · Floored" : ""})`}
       className={cn("relative flex shrink-0 items-center justify-center select-none", className)}
       style={{ width: size, height: size }}
     >
@@ -61,6 +63,11 @@ export function ScoreRing({ score, size = 132, strokeWidth = 10, className }: Sc
         <span className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
           Health Score
         </span>
+        {isFloored && (
+          <span className="text-sev-critical text-[10px] font-bold tracking-tight">
+            Floored at 0
+          </span>
+        )}
       </div>
     </div>
   );

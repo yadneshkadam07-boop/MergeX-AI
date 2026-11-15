@@ -347,6 +347,11 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
             def _sev_str(i: Issue) -> str:
                 return str(getattr(i.severity, "value", i.severity)).lower().strip()
 
+            def _stat_str(i: Issue) -> str:
+                return str(getattr(i.status, "value", i.status)).lower().strip()
+
+            open_issues = [i for i in all_issues if _stat_str(i) in ("open", "detected", "")]
+
             int_count = sum(1 for i in all_issues if _cat_str(i) in ("api_contract", "schema", "integration"))
             sec_count = sum(1 for i in all_issues if _cat_str(i) == "security")
             dep_count = sum(1 for i in all_issues if _cat_str(i) in ("dependency", "dependencies"))
@@ -369,7 +374,18 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
                 "low": sum(1 for i in all_issues if _sev_str(i) == "low"),
             }
 
-            if target_analysis.health_score is None and (not target_analysis.category_scores or "score" not in target_analysis.category_scores):
+            if any(_stat_str(i) in ("resolved", "fixed", "ignored") for i in all_issues):
+                open_sevs = {
+                    "critical": sum(1 for i in open_issues if _sev_str(i) == "critical"),
+                    "high": sum(1 for i in open_issues if _sev_str(i) == "high"),
+                    "medium": sum(1 for i in open_issues if _sev_str(i) == "medium"),
+                    "low": sum(1 for i in open_issues if _sev_str(i) == "low"),
+                }
+                health_score = max(
+                    0,
+                    100 - (open_sevs["critical"] * 15 + open_sevs["high"] * 8 + open_sevs["medium"] * 3 + open_sevs["low"] * 1),
+                )
+            elif target_analysis.health_score is None and (not target_analysis.category_scores or "score" not in target_analysis.category_scores):
                 health_score = max(
                     0,
                     100 - (sev_counts["critical"] * 15 + sev_counts["high"] * 8 + sev_counts["medium"] * 3 + sev_counts["low"] * 1),

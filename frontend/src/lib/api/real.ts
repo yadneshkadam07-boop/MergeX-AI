@@ -286,7 +286,20 @@ export const realApi: ApiClientContract = {
             }
             project.issueCounts = counts;
             project.severityCounts = sevs;
-            if (project.healthScore === 70 || project.healthScore === 100) {
+
+            const openIssues = issues.filter((i) => !i.status || i.status === "open");
+            const openSevs = { critical: 0, high: 0, medium: 0, low: 0 };
+            for (const iss of openIssues) {
+              const sev = String(iss.severity).toLowerCase();
+              if (sev in openSevs) openSevs[sev as keyof typeof openSevs]++;
+            }
+
+            if (openIssues.length < issues.length) {
+              project.healthScore = Math.max(
+                0,
+                100 - (openSevs.critical * 15 + openSevs.high * 8 + openSevs.medium * 3 + openSevs.low * 1),
+              );
+            } else if (project.healthScore === 70 || project.healthScore === 100) {
               project.healthScore = Math.max(
                 0,
                 100 - (sevs.critical * 15 + sevs.high * 8 + sevs.medium * 3 + sevs.low * 1),

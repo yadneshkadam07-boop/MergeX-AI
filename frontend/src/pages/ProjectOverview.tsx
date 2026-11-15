@@ -14,7 +14,7 @@ export function ProjectOverview() {
   useDocumentTitle("Overview", project.name);
 
   // If the project is in analyzing mode and hasn't received complete metrics yet
-  if (project.status === "analyzing" && project.healthScore === 0) {
+  if (project.status === "analyzing") {
     return (
       <div className="animate-pulse space-y-6">
         <Card className="bg-card border">

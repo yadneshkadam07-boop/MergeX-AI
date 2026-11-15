@@ -28,11 +28,13 @@ export function ProjectSummaryCard({ project }: ProjectSummaryCardProps) {
   // Derive health verdict
   const verdict = isCritical
     ? {
-        label: "Critical Risk Detected",
+        label: healthScore === 0 ? "Critical Risk · Score Floored (0/100)" : "Critical Risk Detected",
         color: "border-sev-critical bg-sev-critical/12 text-sev-critical",
         icon: ShieldAlert,
         summary:
-          "Multiple high-impact vulnerabilities require immediate resolution before production deployment.",
+          healthScore === 0
+            ? `Cumulative severity deductions (${severityCounts.critical} critical findings × 15 pts = -${severityCounts.critical * 15} pts) exceed 100 points, flooring the health score at 0. Remediate these critical route contracts to recover health.`
+            : "Multiple high-impact vulnerabilities require immediate resolution before production deployment.",
       }
     : isHigh
       ? {
@@ -176,11 +178,13 @@ export function ProjectSummaryCard({ project }: ProjectSummaryCardProps) {
           <div className="space-y-0.5">
             <span className="font-semibold text-foreground">Recommended Next Action:</span>
             <p className="text-muted-foreground">
-              {isCritical
-                ? `Prioritize remediating the ${severityCounts.critical} critical findings using consolidated batch PR or instant git patches.`
-                : healthScore < 80
-                  ? "Review cross-layer interface contracts and upgrade flagged dependencies to restore full health."
-                  : "Codebase is in solid health. Keep dependencies up-to-date and maintain regular CI scan checks."}
+              {healthScore === 0
+                ? `Prioritize remediating the ${severityCounts.critical} critical findings using consolidated batch PR or instant git patches to lift your score above 0.`
+                : isCritical
+                  ? `Prioritize remediating the ${severityCounts.critical} critical findings using consolidated batch PR or instant git patches.`
+                  : healthScore < 80
+                    ? "Review cross-layer interface contracts and upgrade flagged dependencies to restore full health."
+                    : "Codebase is in solid health. Keep dependencies up-to-date and maintain regular CI scan checks."}
             </p>
           </div>
 

@@ -24,7 +24,7 @@ export function HealthScoreBadge({ score, className, showLabel = false }: Health
     label = "Needs Attention";
   } else {
     colorClasses = "bg-sev-critical/12 text-sev-critical border-sev-critical";
-    label = "Critical";
+    label = score === 0 ? "Critical (Floored)" : "Critical";
   }
 
   return (
@@ -34,7 +34,11 @@ export function HealthScoreBadge({ score, className, showLabel = false }: Health
         colorClasses,
         className,
       )}
-      title={`Health Score: ${score}/100 (${label})`}
+      title={
+        score === 0
+          ? "Health Score: 0/100 (Cumulative severity deductions exceeded 100 points and floored at 0)"
+          : `Health Score: ${score}/100 (${label})`
+      }
     >
       <span className="font-mono font-bold">{score}</span>
       <span className="text-[10px] font-normal opacity-75">/100</span>
