@@ -173,9 +173,9 @@ def _register_middleware(app: FastAPI, settings: Settings) -> None:
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
-        expose_headers=[REQUEST_ID_HEADER],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*", REQUEST_ID_HEADER],
     )
 
     @app.middleware("http")
