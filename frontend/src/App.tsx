@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoadingState } from "@/components/shared/LoadingState";
+import { lazyRetry } from "@/lib/lazy-retry";
 
 import { PublicLayout } from "@/layouts/PublicLayout";
 import { AppLayout } from "@/layouts/AppLayout";
@@ -11,41 +12,41 @@ import { ProjectLayout } from "@/layouts/ProjectLayout";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
-// Code-split pages for high performance and reduced initial bundle
-const Landing = lazy(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
-const Login = lazy(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
-const AuthCallback = lazy(() =>
+// Code-split pages with auto-recovery on new deployment chunk rotations
+const Landing = lazyRetry(() => import("@/pages/Landing").then((m) => ({ default: m.Landing })));
+const Login = lazyRetry(() => import("@/pages/Login").then((m) => ({ default: m.Login })));
+const AuthCallback = lazyRetry(() =>
   import("@/pages/AuthCallback").then((m) => ({ default: m.AuthCallback })),
 );
-const Dashboard = lazy(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
-const NewAnalysis = lazy(() =>
+const Dashboard = lazyRetry(() => import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const NewAnalysis = lazyRetry(() =>
   import("@/pages/NewAnalysis").then((m) => ({ default: m.NewAnalysis })),
 );
-const Settings = lazy(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
-const NotFoundPage = lazy(() =>
+const Settings = lazyRetry(() => import("@/pages/Settings").then((m) => ({ default: m.Settings })));
+const NotFoundPage = lazyRetry(() =>
   import("@/pages/NotFoundPage").then((m) => ({ default: m.NotFoundPage })),
 );
 
 // Project Sub-pages (Architecture and Docs loaded strictly on demand)
-const ProjectOverview = lazy(() =>
+const ProjectOverview = lazyRetry(() =>
   import("@/pages/ProjectOverview").then((m) => ({ default: m.ProjectOverview })),
 );
-const ProjectIntegration = lazy(() =>
+const ProjectIntegration = lazyRetry(() =>
   import("@/pages/ProjectIntegration").then((m) => ({ default: m.ProjectIntegration })),
 );
-const ProjectSecurity = lazy(() =>
+const ProjectSecurity = lazyRetry(() =>
   import("@/pages/ProjectSecurity").then((m) => ({ default: m.ProjectSecurity })),
 );
-const ProjectDependencies = lazy(() =>
+const ProjectDependencies = lazyRetry(() =>
   import("@/pages/ProjectDependencies").then((m) => ({ default: m.ProjectDependencies })),
 );
-const ProjectDeploy = lazy(() =>
+const ProjectDeploy = lazyRetry(() =>
   import("@/pages/ProjectDeploy").then((m) => ({ default: m.ProjectDeploy })),
 );
-const ProjectArchitecture = lazy(() =>
+const ProjectArchitecture = lazyRetry(() =>
   import("@/pages/ProjectArchitecture").then((m) => ({ default: m.ProjectArchitecture })),
 );
-const ProjectDocs = lazy(() =>
+const ProjectDocs = lazyRetry(() =>
   import("@/pages/ProjectDocs").then((m) => ({ default: m.ProjectDocs })),
 );
 

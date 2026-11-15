@@ -6,6 +6,14 @@ import { BrowserRouter } from "react-router-dom";
 import App from "@/App";
 import "@/index.css";
 
+// Automatically reload window when a code-split chunk was replaced by a new deployment
+if (typeof window !== "undefined") {
+  window.addEventListener("vite:preloadError", (event) => {
+    console.warn("Vite preload error (deployment chunk rotated), reloading application:", event);
+    window.location.reload();
+  });
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

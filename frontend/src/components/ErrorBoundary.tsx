@@ -24,10 +24,26 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught application error:", error, errorInfo);
+    const msg = error?.message || String(error || "");
+    const isChunkError =
+      msg.includes("Failed to fetch dynamically imported module") ||
+      msg.includes("dynamically imported module") ||
+      msg.includes("Importing a module script failed");
+
+    if (isChunkError && typeof window !== "undefined") {
+      const key = `mergex_error_boundary_reload_${window.location.pathname}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        window.location.reload();
+      }
+    }
   }
 
   private handleReload = () => {
-    window.location.reload();
+    if (typeof window !== "undefined") {
+      sessionStorage.clear();
+      window.location.reload();
+    }
   };
 
   private handleReset = () => {
