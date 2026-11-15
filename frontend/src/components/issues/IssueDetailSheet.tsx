@@ -217,6 +217,9 @@ Please implement the exact fix in ${issue.filePath}.`;
       const updated: Issue = { ...issue, status: "resolved" };
       setIssue(updated);
       if (onIssueUpdated) onIssueUpdated(updated);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("mergex:issue-updated", { detail: updated }));
+      }
 
       if (res.status === "simulated") {
         toast.info(`Simulated PR created for preview (${res.branch})`, {
@@ -279,6 +282,9 @@ Please implement the exact fix in ${issue.filePath}.`;
     const updated = { ...issue, status: newStatus };
     setIssue(updated);
     if (onIssueUpdated) onIssueUpdated(updated);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("mergex:issue-updated", { detail: updated }));
+    }
 
     toast.success(`Issue marked as ${newStatus}`, {
       action: {
@@ -287,6 +293,9 @@ Please implement the exact fix in ${issue.filePath}.`;
           void (async () => {
             setIssue(previous);
             if (onIssueUpdated) onIssueUpdated(previous);
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("mergex:issue-updated", { detail: previous }));
+            }
             try {
               await updateIssueStatus(projectId, previous.id, previous.status);
               toast.info(`Issue reverted to ${previous.status}`);
@@ -305,6 +314,9 @@ Please implement the exact fix in ${issue.filePath}.`;
       // Rollback on failure
       setIssue(previous);
       if (onIssueUpdated) onIssueUpdated(previous);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("mergex:issue-updated", { detail: previous }));
+      }
       toast.error("Failed to update status. Rolled back changes.");
     }
   };

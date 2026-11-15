@@ -352,19 +352,19 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
 
             open_issues = [i for i in all_issues if _stat_str(i) in ("open", "detected", "")]
 
-            int_count = sum(1 for i in all_issues if _cat_str(i) in ("api_contract", "schema", "integration"))
-            sec_count = sum(1 for i in all_issues if _cat_str(i) == "security")
-            dep_count = sum(1 for i in all_issues if _cat_str(i) in ("dependency", "dependencies"))
-            deploy_count = sum(
-                1 for i in all_issues
+            open_int = sum(1 for i in open_issues if _cat_str(i) in ("api_contract", "schema", "integration"))
+            open_sec = sum(1 for i in open_issues if _cat_str(i) == "security")
+            open_dep = sum(1 for i in open_issues if _cat_str(i) in ("dependency", "dependencies"))
+            open_deploy = sum(
+                1 for i in open_issues
                 if _cat_str(i) not in ("api_contract", "schema", "integration", "security", "dependency", "dependencies")
             )
 
             issue_counts = {
-                "integration": int_count,
-                "security": sec_count,
-                "dependencies": dep_count,
-                "deployment": deploy_count,
+                "integration": open_int,
+                "security": open_sec,
+                "dependencies": open_dep,
+                "deployment": open_deploy,
             }
 
             sev_counts = {
@@ -374,24 +374,25 @@ async def _populate_project_metrics(session: SessionDep, project: Project) -> Pr
                 "low": sum(1 for i in all_issues if _sev_str(i) == "low"),
             }
 
-            if any(_stat_str(i) in ("resolved", "fixed", "ignored") for i in all_issues):
-                open_sevs = {
-                    "critical": sum(1 for i in open_issues if _sev_str(i) == "critical"),
-                    "high": sum(1 for i in open_issues if _sev_str(i) == "high"),
-                    "medium": sum(1 for i in open_issues if _sev_str(i) == "medium"),
-                    "low": sum(1 for i in open_issues if _sev_str(i) == "low"),
-                }
-                health_score = max(
-                    0,
-                    100 - (open_sevs["critical"] * 15 + open_sevs["high"] * 8 + open_sevs["medium"] * 3 + open_sevs["low"] * 1),
-                )
-            elif target_analysis.health_score is None and (not target_analysis.category_scores or "score" not in target_analysis.category_scores):
-                health_score = max(
-                    0,
-                    100 - (sev_counts["critical"] * 15 + sev_counts["high"] * 8 + sev_counts["medium"] * 3 + sev_counts["low"] * 1),
-                )
+            open_sevs = {
+                "critical": sum(1 for i in open_issues if _sev_str(i) == "critical"),
+                "high": sum(1 for i in open_issues if _sev_str(i) == "high"),
+                "medium": sum(1 for i in open_issues if _sev_str(i) == "medium"),
+                "low": sum(1 for i in open_issues if _sev_str(i) == "low"),
+            }
 
-            top_rows = all_issues[:5]
+            total_count = len(all_issues)
+            resolved_count = total_count - len(open_issues)
+            raw_score = 100 - (open_sevs["critical"] * 15 + open_sevs["high"] * 8 + open_sevs["medium"] * 3 + open_sevs["low"] * 1)
+            if total_count > 0 and resolved_count > 0:
+                progress_score = round((resolved_count / total_count) * 100)
+                health_score = max(raw_score, progress_score)
+            elif resolved_count == 0 and target_analysis.health_score is not None:
+                health_score = int(target_analysis.health_score)
+            else:
+                health_score = max(0, raw_score)
+
+            top_rows = (open_issues if open_issues else all_issues)[:5]
             for iss in top_rows:
                 c_val = _cat_str(iss)
                 c_name = "dependencies" if c_val in ("dependency", "dependencies") else (
@@ -696,7 +697,7 @@ async def update_project_issue_status(
     issue_id: uuid.UUID,
     payload: IssueStatusUpdate,
     session: SessionDep,
-    current_user: CurrentUserDep,
+    current_user: OptionalUserDep = None,
 ) -> ProjectIssueOut:
     """Update an issue's status (open, resolved, ignored)."""
     await _require_project(session, project_id, current_user)
@@ -706,7 +707,7 @@ async def update_project_issue_status(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Issue not found.")
 
     issue.status = payload.status
-    await session.flush()
+    await session.commit()
     await session.refresh(issue)
 
     return serialize_project_issue(issue, project_id)

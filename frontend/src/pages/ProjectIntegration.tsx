@@ -36,6 +36,21 @@ export function ProjectIntegration() {
     void loadIssues();
   }, [loadIssues]);
 
+  useEffect(() => {
+    const handleIssueUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<Issue>;
+      if (customEvent.detail) {
+        setIssues((prev) =>
+          prev.map((iss) => (iss.id === customEvent.detail.id ? customEvent.detail : iss)),
+        );
+      } else {
+        void loadIssues();
+      }
+    };
+    window.addEventListener("mergex:issue-updated", handleIssueUpdated);
+    return () => window.removeEventListener("mergex:issue-updated", handleIssueUpdated);
+  }, [loadIssues]);
+
   // Client-side filtering driven by URL search params
   const searchQuery = searchParams.get("q")?.toLowerCase() || "";
   const severityParam = searchParams.get("severity");

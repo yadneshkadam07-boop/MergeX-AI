@@ -326,6 +326,9 @@ export function IssueTable({
       if (onIssuesResolved) {
         onIssuesResolved(res.resolvedIssueIds || idsToResolve);
       }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("mergex:issue-updated"));
+      }
 
       if (res.status === "simulated") {
         toast.info(`Simulated Consolidated PR generated (${res.branch})`, {

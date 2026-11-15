@@ -66,8 +66,14 @@ export function ProjectLayout() {
     isMountedRef.current = true;
     void loadProject();
 
+    const handleIssueUpdated = () => {
+      void loadProject(true);
+    };
+    window.addEventListener("mergex:issue-updated", handleIssueUpdated);
+
     return () => {
       isMountedRef.current = false;
+      window.removeEventListener("mergex:issue-updated", handleIssueUpdated);
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
