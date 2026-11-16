@@ -200,19 +200,52 @@ async function request<T>(
         `Request timed out after ${timeoutMs}ms`,
       );
     }
+    const rawMsg = err instanceof Error ? err.message : "Network request failed";
+    const userFriendlyMsg =
+      rawMsg === "Failed to fetch"
+        ? "Unable to reach MergeX backend service. The server may be waking up from idle — please try again in a moment."
+        : rawMsg;
     throw new ApiError(
       0,
       "Network Error",
       url,
       undefined,
-      err instanceof Error ? err.message : "Network request failed",
+      userFriendlyMsg,
     );
+  }
+}
+
+async function requestWithRetry<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  options: RequestOptions = {},
+): Promise<T> {
+  const isIdempotent = method === "GET" || method === "HEAD";
+  const maxRetries = isIdempotent ? 1 : 0;
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await request<T>(method, path, body, options);
+    } catch (err) {
+      attempt++;
+      const isTransient =
+        err instanceof ApiError &&
+        (err.status === 0 || err.status === 502 || err.status === 503 || err.status === 504);
+
+      if (attempt <= maxRetries && isTransient) {
+        await new Promise((r) => setTimeout(r, 1200 * attempt));
+        continue;
+      }
+      throw err;
+    }
   }
 }
 
 export const http = {
   get<T>(path: string, options?: RequestOptions): Promise<T> {
-    return request<T>("GET", path, undefined, options);
+    return requestWithRetry<T>("GET", path, undefined, options);
   },
   post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
     return request<T>("POST", path, body, options);

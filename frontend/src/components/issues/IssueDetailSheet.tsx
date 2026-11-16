@@ -665,7 +665,7 @@ Please implement the exact fix in ${issue.filePath}.`;
                           >
                             <span>
                               {prResult.status === "simulated"
-                                ? "View Demo URL"
+                                ? "View Repo Pull Requests"
                                 : `View PR #${prResult.prNumber} on GitHub`}
                             </span>
                             <ExternalLink className="size-3" />
@@ -677,10 +677,10 @@ Please implement the exact fix in ${issue.filePath}.`;
                             size="sm"
                             variant="outline"
                             onClick={() => setTokenModalOpen(true)}
-                            className="h-8 gap-1.5 text-xs font-medium"
+                            className="h-8 gap-1.5 text-xs font-semibold text-purple-300 border-purple-500/40 hover:bg-purple-500/10"
                           >
-                            <KeyRound className="size-3.5 text-amber-400" />
-                            <span>Set Token for Real PR</span>
+                            <KeyRound className="size-3.5 text-purple-400" />
+                            <span>Create Live PR with Token</span>
                           </Button>
                         )}
                       </div>
@@ -849,7 +849,15 @@ Please implement the exact fix in ${issue.filePath}.`;
                 className="h-9 font-mono text-xs"
               />
               <p className="text-muted-foreground text-[11px] leading-relaxed">
-                Requires <code className="text-foreground font-mono">repo</code> scope for classic tokens or <code className="text-foreground font-mono">Contents: Write</code> &amp; <code className="text-foreground font-mono">Pull Requests: Write</code> for fine-grained tokens. Tokens are used in-flight and never stored permanently in server databases.
+                Requires <code className="text-foreground font-mono">repo</code> scope. For public &amp; 3rd-party repositories, MergeX AI automatically forks the repo to your account and opens the PR upstream.
+                <a
+                  href="https://github.com/settings/tokens/new?scopes=repo&description=MergeX+AI+PR+Remediation"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-primary hover:underline ml-1"
+                >
+                  Generate Token on GitHub ↗
+                </a>
               </p>
             </div>
 

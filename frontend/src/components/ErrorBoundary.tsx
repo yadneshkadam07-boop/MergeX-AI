@@ -31,10 +31,13 @@ export class ErrorBoundary extends Component<Props, State> {
       msg.includes("Importing a module script failed");
 
     if (isChunkError && typeof window !== "undefined") {
-      const key = `mergex_error_boundary_reload_${window.location.pathname}`;
-      if (!sessionStorage.getItem(key)) {
-        sessionStorage.setItem(key, "1");
-        window.location.reload();
+      const lastReloadTs = Number(sessionStorage.getItem("mergex_chunk_reload_ts") || 0);
+      const now = Date.now();
+      if (now - lastReloadTs > 5000) {
+        sessionStorage.setItem("mergex_chunk_reload_ts", String(now));
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set("_reload", String(now));
+        window.location.replace(currentUrl.toString());
       }
     }
   }

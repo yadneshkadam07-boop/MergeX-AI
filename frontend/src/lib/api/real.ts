@@ -420,16 +420,18 @@ export const realApi: ApiClientContract = {
         { headers },
       );
     } catch (err) {
+      if (githubToken) {
+        throw err;
+      }
       console.warn("Real PR creation failed or backend unreachable, falling back to simulated PR:", err);
       const project = await this.getProject(projectId).catch(() => null);
       const repoUrl = project?.repoUrl || "https://github.com/yadneshkadam07-boop/MergeX-AI";
-      const prNum = Math.floor(Math.random() * 40) + 10;
       return {
-        prUrl: `${repoUrl}/pull/${prNum}`,
-        prNumber: prNum,
+        prUrl: `${repoUrl}/pulls`,
+        prNumber: 1,
         branch: `mergex/fix-issue-${issueId.slice(0, 6)}`,
         status: "simulated",
-        note: "Simulated PR created for preview (Backend network unreachable).",
+        note: "Simulated PR created for preview (No GitHub token provided).",
       };
     }
   },
@@ -450,18 +452,20 @@ export const realApi: ApiClientContract = {
         { headers },
       );
     } catch (err) {
+      if (githubToken) {
+        throw err;
+      }
       console.warn("Real batch PR creation failed or backend unreachable, falling back to simulated batch PR:", err);
       const project = await this.getProject(projectId).catch(() => null);
       const repoUrl = project?.repoUrl || "https://github.com/yadneshkadam07-boop/MergeX-AI";
-      const prNum = Math.floor(Math.random() * 40) + 100;
       const branch = `mergex/batch-remediation-${Date.now().toString(36).slice(-6)}`;
       return {
-        prUrl: `${repoUrl}/pull/${prNum}`,
-        prNumber: prNum,
+        prUrl: `${repoUrl}/pulls`,
+        prNumber: 1,
         branch,
         resolvedIssueIds: issueIds,
         status: "simulated",
-        note: "Simulated batch PR created for preview (Backend network unreachable).",
+        note: "Simulated batch PR created for preview (No GitHub token provided).",
       };
     }
   },
@@ -473,8 +477,12 @@ export const realApi: ApiClientContract = {
     } catch (err) {
       console.warn("Failed to fetch deploy checklist from backend, using verified fallback:", err);
     }
-    const project = await this.getProject(projectId);
-    return project ? generateChecklist(project) : [];
+    try {
+      const project = await this.getProject(projectId);
+      return project ? generateChecklist(project) : [];
+    } catch {
+      return [];
+    }
   },
 
   async getArchitecture(projectId: string): Promise<ArchitectureResponse> {

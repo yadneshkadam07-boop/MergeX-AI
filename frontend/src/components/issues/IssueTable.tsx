@@ -600,7 +600,15 @@ export function IssueTable({
                 className="h-9 font-mono text-xs"
               />
               <p className="text-muted-foreground text-[11px] leading-relaxed">
-                Requires <code className="text-foreground font-mono">repo</code> scope for classic tokens or <code className="text-foreground font-mono">Contents: Write</code> &amp; <code className="text-foreground font-mono">Pull Requests: Write</code> for fine-grained tokens. Tokens are used in-flight and never stored permanently.
+                Requires <code className="text-foreground font-mono">repo</code> scope. For public &amp; 3rd-party repositories, MergeX AI automatically forks the repo to your account and opens the PR upstream.
+                <a
+                  href="https://github.com/settings/tokens/new?scopes=repo&description=MergeX+AI+PR+Remediation"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-semibold text-primary hover:underline ml-1"
+                >
+                  Generate Token on GitHub ↗
+                </a>
               </p>
             </div>
 

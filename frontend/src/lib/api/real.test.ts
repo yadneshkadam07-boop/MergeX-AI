@@ -148,3 +148,43 @@ describe("normalizeProject helper", () => {
     expect(project.owner).toBe("my-org");
   });
 });
+
+describe("realApi.createPullRequest", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns safe simulated PR linking to /pulls when no token is provided and backend fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("Network Error")),
+    );
+
+    const result = await realApi.createPullRequest("p1", "iss1");
+    expect(result.status).toBe("simulated");
+    expect(result.prUrl).toContain("/pulls");
+    expect(result.branch).toBe("mergex/fix-issue-iss1");
+  });
+
+  it("re-throws error when a token was provided so the user is informed of the failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+        headers: new Headers({ "content-type": "application/json" }),
+        text: () => Promise.resolve(JSON.stringify({ detail: "Invalid GitHub token permissions" })),
+      }),
+    );
+
+    await expect(realApi.createPullRequest("p1", "iss1", "ghp_invalid")).rejects.toThrow(
+      "Invalid GitHub token permissions",
+    );
+  });
+});

@@ -748,7 +748,8 @@ async def create_issue_pr(
     )
 
     issue.status = IssueStatus.RESOLVED
-    await session.flush()
+    await session.commit()
+    await session.refresh(issue)
 
     return CreatePullRequestResponse(
         pr_url=res["prUrl"],
@@ -805,10 +806,12 @@ async def create_batch_issue_pr(
         issues=issues,
     )
 
+    resolved_ids = set(res.get("resolvedIssueIds", [str(i.id) for i in issues]))
     for iss in issues:
-        iss.status = IssueStatus.RESOLVED
+        if str(iss.id) in resolved_ids:
+            iss.status = IssueStatus.RESOLVED
 
-    await session.flush()
+    await session.commit()
 
     return CreateBatchPullRequestResponse(
         pr_url=res["prUrl"],

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import time
 import uuid
 from typing import Any
 
 import httpx
+from fastapi import HTTPException, status
 
 from app.core.logging import get_logger
 from app.models.issue import Issue
@@ -19,6 +21,92 @@ log = get_logger("app.services.github_pr")
 GITHUB_API_BASE = "https://api.github.com"
 
 
+async def _resolve_target_repo_and_head(
+    client: httpx.AsyncClient,
+    owner: str,
+    repo: str,
+    headers: dict[str, str],
+) -> tuple[str, str, str, str, bool]:
+    """Inspect user identity and repository permissions to support both direct write and forks.
+
+    Returns:
+        (target_owner, target_repo, default_branch, base_sha, is_fork)
+    """
+    # 1. Verify user identity and token validity
+    user_resp = await client.get(f"{GITHUB_API_BASE}/user", headers=headers)
+    if user_resp.status_code == 401:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid GitHub token. Please verify that your Personal Access Token is active and has 'repo' scope.",
+        )
+    if user_resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"GitHub token authentication error ({user_resp.status_code}): {user_resp.text}",
+        )
+    auth_user = user_resp.json().get("login", "")
+
+    # 2. Get repository details and permissions
+    repo_resp = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=headers)
+    if repo_resp.status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"GitHub repository '{owner}/{repo}' was not found or is private.",
+        )
+    if repo_resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to access repository '{owner}/{repo}': {repo_resp.text}",
+        )
+
+    repo_data = repo_resp.json()
+    default_branch = repo_data.get("default_branch", "main")
+    permissions = repo_data.get("permissions", {})
+    can_push = bool(permissions.get("push", False)) or (bool(auth_user) and auth_user.lower() == owner.lower())
+
+    # 3. Get latest default branch SHA on upstream repository
+    ref_resp = await client.get(
+        f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
+        headers=headers,
+    )
+    if ref_resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to fetch default branch '{default_branch}' reference for '{owner}/{repo}'.",
+        )
+    base_sha = ref_resp.json()["object"]["sha"]
+
+    # 4. If direct write access is allowed, push directly to target repository
+    if can_push:
+        return (owner, repo, default_branch, base_sha, False)
+
+    # 5. Otherwise, automatically fork to the authenticated user's account for public/3rd-party repos
+    log.info("user_lacks_push_permission_using_fork", upstream=f"{owner}/{repo}", fork_owner=auth_user)
+
+    # Check if fork already exists under user's namespace
+    fork_check = await client.get(f"{GITHUB_API_BASE}/repos/{auth_user}/{repo}", headers=headers)
+    if fork_check.status_code != 200:
+        # Trigger fork creation on GitHub
+        fork_resp = await client.post(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/forks", headers=headers)
+        if fork_resp.status_code not in (200, 202):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Direct write access to '{owner}/{repo}' is forbidden, and automatic fork creation to "
+                    f"'{auth_user}/{repo}' failed ({fork_resp.status_code}): {fork_resp.text}. "
+                    f"Please ensure your token has 'repo' or 'public_repo' scope."
+                ),
+            )
+        # Wait up to 10 seconds for fork creation
+        for _ in range(5):
+            await asyncio.sleep(2.0)
+            check = await client.get(f"{GITHUB_API_BASE}/repos/{auth_user}/{repo}", headers=headers)
+            if check.status_code == 200:
+                break
+
+    return (auth_user, repo, default_branch, base_sha, True)
+
+
 async def create_pull_request_for_issue(
     *,
     token: str | None,
@@ -27,8 +115,8 @@ async def create_pull_request_for_issue(
 ) -> dict[str, Any]:
     """Create a pull request on GitHub applying the suggested fix for an issue.
 
-    If token is omitted or if the repository cannot be modified (e.g. mock or public 3rd party
-    repo without write access), it generates a realistic simulated PR link for safe demonstration.
+    If token is omitted, it generates a safe simulated PR preview linking to repository pull requests.
+    If token is provided, it supports both direct repositories and public 3rd-party repos via automatic forking.
     """
     try:
         ref = parse_github_url(repo_url)
@@ -39,180 +127,163 @@ async def create_pull_request_for_issue(
     owner = ref.owner
     repo = ref.repo
 
-    if not token:
+    if not token or not token.strip():
         log.info("no_github_token_using_simulation", repo=f"{owner}/{repo}")
         return _simulated_pr(repo_url, issue)
 
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {token.strip()}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "MergeX-AI-Bot",
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            # 1. Check if repo is accessible and get default branch
-            repo_resp = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=headers)
-            if repo_resp.status_code != 200:
-                log.warning("repo_not_accessible", status=repo_resp.status_code, body=repo_resp.text)
-                return _simulated_pr(
-                    repo_url,
-                    issue,
-                    note="Simulated PR (Write access unavailable)",
-                )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # 1. Inspect repository and setup fork if required
+        target_owner, target_repo, default_branch, base_sha, is_fork = await _resolve_target_repo_and_head(
+            client, owner, repo, headers
+        )
 
-            repo_data = repo_resp.json()
-            default_branch = repo_data.get("default_branch", "main")
+        # 2. Create unique branch name
+        short_id = str(issue.id)[:8]
+        branch_name = f"mergex/fix-{issue.detected_by.lower()}-{short_id}"
 
-            # 2. Get latest commit SHA of default branch
-            ref_resp = await client.get(
-                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
+        # 3. Create branch ref on target repository
+        create_branch_resp = await client.post(
+            f"{GITHUB_API_BASE}/repos/{target_owner}/{target_repo}/git/refs",
+            headers=headers,
+            json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
+        )
+        if create_branch_resp.status_code not in (201, 422):
+            log.warning("failed_create_branch", status=create_branch_resp.status_code, body=create_branch_resp.text)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to create branch '{branch_name}' on '{target_owner}/{target_repo}': {create_branch_resp.text}",
+            )
+
+        # 4. Apply fix to target file
+        target_path = resolve_target_file_path(
+            issue.file_path,
+            rule_id=issue.detected_by,
+            category=issue.category,
+        )
+
+        if issue.fix_after:
+            file_resp = await client.get(
+                f"{GITHUB_API_BASE}/repos/{target_owner}/{target_repo}/contents/{target_path}?ref={branch_name}",
                 headers=headers,
             )
-            if ref_resp.status_code != 200:
-                return _simulated_pr(repo_url, issue)
-
-            base_sha = ref_resp.json()["object"]["sha"]
-
-            # 3. Create branch name
-            short_id = str(issue.id)[:8]
-            branch_name = f"mergex/fix-{issue.detected_by.lower()}-{short_id}"
-
-            # 4. Create branch ref
-            create_branch_resp = await client.post(
-                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/refs",
-                headers=headers,
-                json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
-            )
-            if create_branch_resp.status_code not in (201, 422):
-                log.warning("failed_create_branch", status=create_branch_resp.status_code)
-                return _simulated_pr(repo_url, issue)
-
-            # 5. Apply fix to file if fix_after exists
-            target_path = resolve_target_file_path(
-                issue.file_path,
-                rule_id=issue.detected_by,
-                category=issue.category,
-            )
-
-            if issue.fix_after:
+            if file_resp.status_code != 200:
+                # Fallback to upstream default branch if fork content is not yet populated
                 file_resp = await client.get(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}?ref={branch_name}",
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}?ref={default_branch}",
                     headers=headers,
                 )
-                if file_resp.status_code == 200:
-                    file_data = file_resp.json()
-                    file_sha = file_data["sha"]
-                    try:
-                        content_raw = base64.b64decode(file_data["content"]).decode("utf-8")
-                    except Exception:
-                        content_raw = ""
 
-                    line_num = getattr(issue, "line_start", None) or getattr(issue, "line_number", None)
-                    updated_content, modified = apply_code_patch(
-                        content_raw,
-                        issue.fix_before,
-                        issue.fix_after,
-                        target_line=line_num,
-                    )
+            file_sha = None
+            content_raw = ""
+            if file_resp.status_code == 200:
+                file_data = file_resp.json()
+                file_sha = file_data.get("sha")
+                try:
+                    content_raw = base64.b64decode(file_data.get("content", "")).decode("utf-8")
+                except Exception:
+                    content_raw = ""
 
-                    if modified:
-                        content_b64 = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
-                        commit_msg = (
-                            f"fix({issue.category}): {issue.title}\n\nAutomated fix applied by MergeX AI."
-                        )
-                        await client.put(
-                            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}",
-                            headers=headers,
-                            json={
-                                "message": commit_msg,
-                                "content": content_b64,
-                                "sha": file_sha,
-                                "branch": branch_name,
-                            },
-                        )
-                elif file_resp.status_code == 404:
-                    # File does not exist yet: create it directly
-                    content_b64 = base64.b64encode(issue.fix_after.encode("utf-8")).decode("utf-8")
-                    commit_msg = (
-                        f"chore({issue.category}): add {target_path}\n\nAutomated fix applied by MergeX AI."
-                    )
-                    await client.put(
-                        f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}",
-                        headers=headers,
-                        json={
-                            "message": commit_msg,
-                            "content": content_b64,
-                            "branch": branch_name,
-                        },
-                    )
-
-            # 6. Create Pull Request
-            pr_title = f"fix({issue.category}): {issue.title}"
-            line_target = getattr(issue, "line_start", None) or getattr(issue, "line_number", None)
-            target_display = (
-                f"`{target_path}:{line_target}`"
-                if line_target
-                else f"`{target_path}`"
-            )
-            pr_body = (
-                f"## 🤖 MergeX AI Automated Remediation\n\n"
-                f"### Defect Identified\n"
-                f"- **Rule ID:** `{issue.detected_by}`\n"
-                f"- **Severity:** `{str(issue.severity).upper()}`\n"
-                f"- **Category:** `{str(issue.category).title()}`\n"
-                f"- **Target File:** {target_display}\n\n"
-                f"### Problem Description\n"
-                f"{issue.explanation or issue.description}\n\n"
-                f"### Suggested Fix\n"
-                f"{issue.suggested_fix or 'Applied automated remediation patch.'}\n\n"
-                f"### Verification Checklist\n"
-                f"- [ ] Review diff for accuracy and compliance with repository standards.\n"
-                f"- [ ] Run local automated test suite.\n"
-                f"- [ ] Verify that no downstream callers or APIs are broken.\n\n"
-                f"---\n"
-                f"*Automatically generated and verified by [MergeX AI](https://merge-x-ai.vercel.app).*"
+            line_num = getattr(issue, "line_start", None) or getattr(issue, "line_number", None)
+            updated_content, modified = apply_code_patch(
+                content_raw,
+                issue.fix_before,
+                issue.fix_after,
+                target_line=line_num,
             )
 
-            pr_resp = await client.post(
-                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls",
+            final_content = updated_content if modified else issue.fix_after
+            content_b64 = base64.b64encode(final_content.encode("utf-8")).decode("utf-8")
+            commit_msg = f"fix({issue.category}): {issue.title}\n\nAutomated fix applied by MergeX AI."
+            commit_payload: dict[str, Any] = {
+                "message": commit_msg,
+                "content": content_b64,
+                "branch": branch_name,
+            }
+            if file_sha:
+                commit_payload["sha"] = file_sha
+
+            put_resp = await client.put(
+                f"{GITHUB_API_BASE}/repos/{target_owner}/{target_repo}/contents/{target_path}",
                 headers=headers,
-                json={
-                    "title": pr_title,
-                    "head": branch_name,
-                    "base": default_branch,
-                    "body": pr_body,
-                },
+                json=commit_payload,
             )
+            if put_resp.status_code not in (200, 201):
+                log.warning("failed_to_commit_file", status=put_resp.status_code, body=put_resp.text)
 
-            if pr_resp.status_code == 201:
-                pr_data = pr_resp.json()
+        # 5. Create Pull Request on upstream repository
+        pr_title = f"fix({issue.category}): {issue.title}"
+        line_target = getattr(issue, "line_start", None) or getattr(issue, "line_number", None)
+        target_display = (
+            f"`{target_path}:{line_target}`"
+            if line_target
+            else f"`{target_path}`"
+        )
+        pr_body = (
+            f"## 🤖 MergeX AI Automated Remediation\n\n"
+            f"### Defect Identified\n"
+            f"- **Rule ID:** `{issue.detected_by}`\n"
+            f"- **Severity:** `{str(issue.severity).upper()}`\n"
+            f"- **Category:** `{str(issue.category).title()}`\n"
+            f"- **Target File:** {target_display}\n\n"
+            f"### Problem Description\n"
+            f"{issue.explanation or issue.description}\n\n"
+            f"### Suggested Fix\n"
+            f"{issue.suggested_fix or 'Applied automated remediation patch.'}\n\n"
+            f"### Verification Checklist\n"
+            f"- [ ] Review diff for accuracy and compliance with repository standards.\n"
+            f"- [ ] Run local automated test suite.\n"
+            f"- [ ] Verify that no downstream callers or APIs are broken.\n\n"
+            f"---\n"
+            f"*Automatically generated and verified by [MergeX AI](https://merge-x-ai.vercel.app).*"
+        )
+
+        head_ref = f"{target_owner}:{branch_name}" if is_fork else branch_name
+        pr_resp = await client.post(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls",
+            headers=headers,
+            json={
+                "title": pr_title,
+                "head": head_ref,
+                "base": default_branch,
+                "body": pr_body,
+            },
+        )
+
+        if pr_resp.status_code == 201:
+            pr_data = pr_resp.json()
+            return {
+                "prUrl": pr_data["html_url"],
+                "prNumber": pr_data["number"],
+                "branch": branch_name,
+                "status": "created",
+            }
+
+        if pr_resp.status_code == 422:
+            list_pr_resp = await client.get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls?head={head_ref}",
+                headers=headers,
+            )
+            if list_pr_resp.status_code == 200 and list_pr_resp.json():
+                existing_pr = list_pr_resp.json()[0]
                 return {
-                    "prUrl": pr_data["html_url"],
-                    "prNumber": pr_data["number"],
+                    "prUrl": existing_pr["html_url"],
+                    "prNumber": existing_pr["number"],
                     "branch": branch_name,
-                    "status": "created",
+                    "status": "already_exists",
                 }
-            if pr_resp.status_code == 422:
-                list_pr_resp = await client.get(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls?head={owner}:{branch_name}",
-                    headers=headers,
-                )
-                if list_pr_resp.status_code == 200 and list_pr_resp.json():
-                    existing_pr = list_pr_resp.json()[0]
-                    return {
-                        "prUrl": existing_pr["html_url"],
-                        "prNumber": existing_pr["number"],
-                        "branch": branch_name,
-                        "status": "already_exists",
-                    }
 
-            log.warning("failed_create_pr", status=pr_resp.status_code, body=pr_resp.text)
-            return _simulated_pr(repo_url, issue)
-    except Exception as exc:
-        log.warning("create_pull_request_exception", error=str(exc))
-        return _simulated_pr(repo_url, issue, note="Simulated PR (Remediation prepared)")
+        log.warning("failed_create_pr", status=pr_resp.status_code, body=pr_resp.text)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"GitHub Pull Request creation failed ({pr_resp.status_code}): {pr_resp.text}",
+        )
 
 
 def _simulated_pr(repo_url: str, issue: Issue, note: str = "Demo Pull Request") -> dict[str, Any]:
@@ -225,14 +296,10 @@ def _simulated_pr(repo_url: str, issue: Issue, note: str = "Demo Pull Request") 
     )
     if base_url.endswith(".git"):
         base_url = base_url[:-4]
-    try:
-        pr_num = int(short_id, 16) % 50 + 1
-    except ValueError:
-        pr_num = 42
 
     return {
-        "prUrl": f"{base_url}/pull/{pr_num}",
-        "prNumber": pr_num,
+        "prUrl": f"{base_url}/pulls",
+        "prNumber": 1,
         "branch": branch,
         "status": "simulated",
         "note": note,
@@ -248,6 +315,7 @@ async def create_batch_pull_request(
     """Create a single consolidated pull request on GitHub applying fixes for multiple issues.
 
     Sequentially patches all affected files and creates a single branch and PR.
+    Supports both direct push and cross-repo PRs via automatic forking.
     """
     if not issues:
         raise ValueError("Cannot create a batch pull request with 0 issues.")
@@ -261,56 +329,41 @@ async def create_batch_pull_request(
     owner = ref.owner
     repo = ref.repo
 
-    if not token:
+    if not token or not token.strip():
         log.info("no_github_token_using_simulation_for_batch", repo=f"{owner}/{repo}")
         return _simulated_batch_pr(repo_url, issues)
 
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {token.strip()}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "MergeX-AI-Bot",
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        # 1. Check if repo is accessible and get default branch
-        repo_resp = await client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=headers)
-        if repo_resp.status_code != 200:
-            log.warning("repo_not_accessible_for_batch", status=repo_resp.status_code)
-            return _simulated_batch_pr(
-                repo_url,
-                issues,
-                note="Simulated Batch PR (Write access unavailable)",
-            )
-
-        repo_data = repo_resp.json()
-        default_branch = repo_data.get("default_branch", "main")
-
-        # 2. Get latest commit SHA of default branch
-        ref_resp = await client.get(
-            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/ref/heads/{default_branch}",
-            headers=headers,
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        # 1. Inspect repository and setup fork if required
+        target_owner, target_repo, default_branch, base_sha, is_fork = await _resolve_target_repo_and_head(
+            client, owner, repo, headers
         )
-        if ref_resp.status_code != 200:
-            return _simulated_batch_pr(repo_url, issues)
 
-        base_sha = ref_resp.json()["object"]["sha"]
-
-        # 3. Create unique branch name
+        # 2. Create unique branch name
         timestamp_slug = time.strftime("%Y%m%d-%H%M%S")
         branch_name = f"mergex/remediation-{timestamp_slug}"
 
-        # 4. Create branch ref
+        # 3. Create branch ref on target repository
         create_branch_resp = await client.post(
-            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/refs",
+            f"{GITHUB_API_BASE}/repos/{target_owner}/{target_repo}/git/refs",
             headers=headers,
             json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
         )
         if create_branch_resp.status_code not in (201, 422):
-            log.warning("failed_create_batch_branch", status=create_branch_resp.status_code)
-            return _simulated_batch_pr(repo_url, issues)
+            log.warning("failed_create_batch_branch", status=create_branch_resp.status_code, body=create_branch_resp.text)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to create branch '{branch_name}' on '{target_owner}/{target_repo}': {create_branch_resp.text}",
+            )
 
-        # 5. Apply fixes across all issues, managing file contents in-memory
+        # 4. Apply fixes across all issues, managing file contents in-memory
         file_state: dict[str, tuple[str, str | None]] = {}
         resolved_issues: list[Issue] = []
 
@@ -327,9 +380,15 @@ async def create_batch_pull_request(
             # Retrieve file state if not yet loaded
             if target_path not in file_state:
                 file_resp = await client.get(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}?ref={branch_name}",
+                    f"{GITHUB_API_BASE}/repos/{target_owner}/{target_repo}/contents/{target_path}?ref={branch_name}",
                     headers=headers,
                 )
+                if file_resp.status_code != 200:
+                    file_resp = await client.get(
+                        f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{target_path}?ref={default_branch}",
+                        headers=headers,
+                    )
+
                 if file_resp.status_code == 200:
                     data = file_resp.json()
                     file_sha = data.get("sha")
@@ -356,7 +415,7 @@ async def create_batch_pull_request(
                 file_state[target_path] = (updated_content, curr_sha)
                 resolved_issues.append(issue)
 
-        # 6. Commit all modified files to the new branch
+        # 5. Commit all modified files to the new branch
         for path, (new_content, file_sha) in file_state.items():
             content_b64 = base64.b64encode(new_content.encode("utf-8")).decode("utf-8")
             commit_payload: dict[str, Any] = {
@@ -368,12 +427,12 @@ async def create_batch_pull_request(
                 commit_payload["sha"] = file_sha
 
             await client.put(
-                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{path}",
+                f"{GITHUB_API_BASE}/repos/{target_owner}/{target_repo}/contents/{path}",
                 headers=headers,
                 json=commit_payload,
             )
 
-        # 7. Create Consolidated Pull Request
+        # 6. Create Consolidated Pull Request on upstream repository
         pr_title = f"fix(remediation): resolve {len(resolved_issues) or len(issues)} issues across codebase"
 
         rows: list[str] = []
@@ -405,12 +464,13 @@ async def create_batch_pull_request(
             f"*Automated batch remediation by [MergeX AI](https://merge-x-ai.vercel.app).*"
         )
 
+        head_ref = f"{target_owner}:{branch_name}" if is_fork else branch_name
         pr_resp = await client.post(
             f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls",
             headers=headers,
             json={
                 "title": pr_title,
-                "head": branch_name,
+                "head": head_ref,
                 "base": default_branch,
                 "body": pr_body,
             },
@@ -427,7 +487,10 @@ async def create_batch_pull_request(
             }
 
         log.warning("failed_create_batch_pr", status=pr_resp.status_code, body=pr_resp.text)
-        return _simulated_batch_pr(repo_url, issues)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"GitHub Consolidated PR creation failed ({pr_resp.status_code}): {pr_resp.text}",
+        )
 
 
 def _simulated_batch_pr(
@@ -445,11 +508,9 @@ def _simulated_batch_pr(
     if base_url.endswith(".git"):
         base_url = base_url[:-4]
 
-    pr_num = 100 + (len(issues) * 7) % 50
-
     return {
-        "prUrl": f"{base_url}/pull/{pr_num}",
-        "prNumber": pr_num,
+        "prUrl": f"{base_url}/pulls",
+        "prNumber": 1,
         "branch": branch,
         "status": "simulated",
         "resolvedIssueIds": [str(i.id) for i in issues],
