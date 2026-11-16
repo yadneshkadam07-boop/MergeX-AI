@@ -413,7 +413,7 @@ The core platform capabilities described in this README are implemented. Potenti
 
 These are future extensions, not features claimed as currently available.
 
-## Team
+## 👥 Team
 
 <div align="center">
 
