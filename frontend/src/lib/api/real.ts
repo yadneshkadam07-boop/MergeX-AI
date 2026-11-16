@@ -410,14 +410,9 @@ export const realApi: ApiClientContract = {
     githubToken?: string,
   ): Promise<CreatePullRequestResponse> {
     try {
-      const headers: Record<string, string> = {};
-      if (githubToken) {
-        headers["X-GitHub-Token"] = githubToken;
-      }
       return await http.post<CreatePullRequestResponse>(
         `/projects/${encodeURIComponent(projectId)}/issues/${encodeURIComponent(issueId)}/create-pr`,
         { githubToken },
-        { headers },
       );
     } catch (err) {
       if (githubToken) {
@@ -442,14 +437,9 @@ export const realApi: ApiClientContract = {
     githubToken?: string,
   ): Promise<CreateBatchPullRequestResponse> {
     try {
-      const headers: Record<string, string> = {};
-      if (githubToken) {
-        headers["X-GitHub-Token"] = githubToken;
-      }
       return await http.post<CreateBatchPullRequestResponse>(
         `/projects/${encodeURIComponent(projectId)}/create-batch-pr`,
         { issueIds, githubToken },
-        { headers },
       );
     } catch (err) {
       if (githubToken) {

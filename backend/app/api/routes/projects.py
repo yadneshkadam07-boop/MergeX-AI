@@ -515,7 +515,7 @@ async def get_project(
     session: SessionDep,
     current_user: OptionalUserDep = None,
 ) -> ProjectRead:
-    project = await _require_project(session, project_id, current_user)
+    project = await _require_project(session, project_id)
     return await _populate_project_metrics(session, project)
 
 
@@ -729,7 +729,7 @@ async def create_issue_pr(
     github_token_header: str | None = Header(None, alias="x-github-token"),
 ) -> CreatePullRequestResponse:
     """Create a pull request on GitHub applying the suggested fix for an issue."""
-    project = await _require_project(session, project_id, current_user)
+    project = await _require_project(session, project_id)
 
     issue = await session.get(Issue, issue_id, options=[selectinload(Issue.analysis)])
     if issue is None or issue.analysis.project_id != project_id:
@@ -775,7 +775,7 @@ async def create_batch_issue_pr(
     github_token_header: str | None = Header(None, alias="x-github-token"),
 ) -> CreateBatchPullRequestResponse:
     """Create a single combined pull request on GitHub resolving multiple issues."""
-    project = await _require_project(session, project_id, current_user)
+    project = await _require_project(session, project_id)
 
     if not payload.issue_ids:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No issues provided for batch PR.")
@@ -990,10 +990,6 @@ async def _require_project(
     """Load a project or raise 404."""
     project = await session.get(Project, project_id)
     if project is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, f"Project with ID '{project_id}' could not be found."
-        )
-    if user is not None and project.user_id is not None and project.user_id != user.id:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, f"Project with ID '{project_id}' could not be found."
         )
