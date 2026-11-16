@@ -310,7 +310,7 @@ export function AppLayout() {
           <main
             id="main-content"
             tabIndex={-1}
-            className="flex-1 min-h-0 overflow-y-auto scroll-smooth p-4 focus:outline-hidden sm:p-6 lg:p-8"
+            className="flex-1 min-h-0 overflow-y-auto p-4 focus:outline-hidden sm:p-6 lg:p-8"
           >
             <div className="mx-auto max-w-6xl">
               <Outlet />

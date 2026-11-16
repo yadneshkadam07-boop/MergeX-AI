@@ -32,10 +32,10 @@ export function ProjectDocs() {
     getReport(project.id)
       .then((data) => {
         setReport(data);
-        if (data.sections.length > 0 && !activeSectionId) {
+        if (data.sections.length > 0) {
           const firstSection = data.sections[0];
           if (firstSection) {
-            setActiveSectionId(firstSection.id);
+            setActiveSectionId((prev) => prev || firstSection.id);
           }
         }
         setLoading(false);
@@ -45,7 +45,7 @@ export function ProjectDocs() {
         setError(err instanceof Error ? err.message : "Failed to generate project documentation.");
         setLoading(false);
       });
-  }, [project.id, activeSectionId]);
+  }, [project.id]);
 
   useEffect(() => {
     loadReportData();

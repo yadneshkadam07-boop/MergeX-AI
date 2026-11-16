@@ -387,21 +387,15 @@ a:focus-visible > .card-interactive::before,
   }
 }
 
-/* Performance & smooth scrolling enhancements */
+/* Performance & native scrolling enhancements */
 html,
 body {
-  scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
 
 #main-content {
-  scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
-}
-
-.smooth-card {
-  content-visibility: auto;
-  contain-intrinsic-size: 0 130px;
+  overscroll-behavior-y: contain;
 }
 
 .gpu-accelerated {

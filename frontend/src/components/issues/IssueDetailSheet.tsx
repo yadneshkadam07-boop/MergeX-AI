@@ -79,11 +79,16 @@ export function IssueDetailSheet({
 
   // Close sheet by removing query param
   const handleClose = useCallback(() => {
-    const next = new URLSearchParams(searchParams);
-    next.delete("issue");
-    setSearchParams(next, { replace: true });
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("issue");
+        return next;
+      },
+      { replace: true },
+    );
     setPrResult(null);
-  }, [searchParams, setSearchParams]);
+  }, [setSearchParams]);
 
   // Fetch issue when issueId changes
   useEffect(() => {
